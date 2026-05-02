@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "1015788618693",
+    "project_id": "piko-cdaae",
+    "storage_bucket": "piko-cdaae.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1015788618693:android:1b140a21de2d49d69401ac",
+        "android_client_info": {
+          "package_name": "com.zel_01.Piko"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "1015788618693-r1v76tdva6d673hpc8aiomvrrn2q9dhu.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.zel_01.Piko",
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+          }
+        },
+        {
+          "client_id": "1015788618693-28qa1mih7g9tec9fmfsfin36eb8g91kl.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1iXNTFk67lFHF20rxM6DZ4TiGI-xabmU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1015788618693-28qa1mih7g9tec9fmfsfin36eb8g91kl.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

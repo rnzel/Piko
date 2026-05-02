@@ -1,98 +1,178 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import {
+  FirebaseAuthTypes,
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithCredential,
+  signOut,
+} from "@react-native-firebase/auth";
+import {
+  GoogleSignin,
+  GoogleSigninButton,
+  statusCodes,
+} from "@react-native-google-signin/google-signin";
+import React, { useEffect, useState } from "react";
+import { Alert, Button, StyleSheet, Text, View } from "react-native";
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+GoogleSignin.configure({
+  webClientId:
+    "1015788618693-28qa1mih7g9tec9fmfsfin36eb8g91kl.apps.googleusercontent.com",
+});
 
-export default function HomeScreen() {
+const SIGN_IN_TIMEOUT_MS = 20000;
+
+const Index = () => {
+  const [initializing, setInitializing] = useState(true);
+  const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
+
+  const signIn = async () => {
+    console.log("Starting sign in process...");
+    try {
+      // force account picker
+      await GoogleSignin.signOut();
+
+      // Check if your device supports Google Play
+      await GoogleSignin.hasPlayServices({
+        showPlayServicesUpdateDialog: true,
+      });
+      console.log("Play services available");
+
+      // Get the users ID token
+      const signInResult = await Promise.race([
+        GoogleSignin.signIn(),
+        new Promise((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "Google Sign-In timed out. Please retry and ensure Google account picker appears.",
+                ),
+              ),
+            SIGN_IN_TIMEOUT_MS,
+          ),
+        ),
+      ]);
+      console.log("Google Sign-In successful", JSON.stringify(signInResult));
+
+      // Try the new style of google-sign in result, from v13+ of that module
+      // @ts-ignore - for compatibility between different versions of the library
+      let idToken = (signInResult as { data?: { idToken?: string } }).data
+        ?.idToken;
+      if (!idToken) {
+        // if you are using older versions of google-signin, try old style result
+        // @ts-ignore - for older versions
+        idToken = (signInResult as { idToken?: string }).idToken;
+      }
+      if (!idToken) {
+        throw new Error("No ID token found");
+      }
+      console.log("ID Token obtained");
+
+      // Create a Google credential with the token
+      const googleCredential = GoogleAuthProvider.credential(idToken);
+      console.log("Firebase credential created");
+
+      // Sign-in the user with the credential
+      const firebaseUserCredential = await signInWithCredential(
+        getAuth(),
+        googleCredential,
+      );
+      console.log(
+        "Firebase sign in successful",
+        firebaseUserCredential.user.email,
+      );
+      return firebaseUserCredential;
+    } catch (error) {
+      const errorCode =
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof (error as { code: unknown }).code === "string"
+          ? (error as { code: string }).code
+          : undefined;
+
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        typeof (error as { code: unknown }).code === "string"
+      ) {
+        switch (errorCode) {
+          case statusCodes.SIGN_IN_CANCELLED:
+            Alert.alert("Sign-in cancelled", "You cancelled Google sign-in.");
+            break;
+          case statusCodes.IN_PROGRESS:
+            // operation (eg. sign in) already in progress
+            Alert.alert("Sign-in in progress", "Please wait and try again.");
+            break;
+          case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
+            // Android only, play services not available or outdated
+            Alert.alert(
+              "Google Play Services unavailable",
+              "Please update Google Play Services and try again.",
+            );
+            break;
+          default:
+            Alert.alert(
+              "Google Sign-in error",
+              `Error code: ${errorCode}. Check Metro logs for details.`,
+            );
+        }
+      } else {
+        // an error that's not related to google sign in occurred
+        console.error(error);
+        Alert.alert(
+          "Sign-in failed",
+          error instanceof Error ? error.message : "Unknown sign-in error",
+        );
+      }
+    }
+  };
+
+  // Handle user state changes
+  function handleAuthStateChanged(user: FirebaseAuthTypes.User | null) {
+    console.log("Auth state changed:", user ? user.email : "no user");
+    setUser(user);
+    if (initializing) setInitializing(false);
+  }
+
+  useEffect(() => {
+    const subscriber = onAuthStateChanged(getAuth(), handleAuthStateChanged);
+    return subscriber; // unsubscribe on unmount
+  }, []);
+
+  if (initializing) return null;
+
+  if (!user) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.title}>Login</Text>
+        <GoogleSigninButton onPress={signIn} />
+      </View>
+    );
+  }
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
-
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    <View style={styles.container}>
+      <Text style={styles.welcome}>Welcome {user.email}</Text>
+      <Button title="Sign Out" onPress={() => signOut(getAuth())} />
+    </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  title: {
+    fontSize: 24,
+    marginBottom: 20,
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
+  welcome: {
+    fontSize: 18,
   },
 });
+
+export default Index;
