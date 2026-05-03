@@ -14,8 +14,11 @@ const CustomTabBar = ({
 }: BottomTabBarProps) => {
   const insets = useSafeAreaInsets();
 
-  // Filter out empty placeholder route
-  const routes = state.routes.filter((route) => route.name !== "_empty");
+  // Only render intended bottom-nav routes
+  const visibleRouteNames = ["index", "groups", "notifications", "profile"];
+  const routes = state.routes.filter((route) =>
+    visibleRouteNames.includes(route.name),
+  );
 
   return (
     <View
@@ -64,6 +67,8 @@ const CustomTabBar = ({
                 return isFocused ? "checkbox" : "checkbox-outline";
               case "groups":
                 return isFocused ? "people" : "people-outline";
+              case "notifications":
+                return isFocused ? "notifications" : "notifications-outline";
               case "profile":
                 return isFocused ? "person" : "person-outline";
               default:
@@ -79,56 +84,21 @@ const CustomTabBar = ({
               accessibilityLabel={options.tabBarAccessibilityLabel}
               onPress={onPress}
               onLongPress={onLongPress}
-              style={styles.tabItem}
               activeOpacity={0.7}
             >
-              <View
-                style={[
-                  styles.iconContainer,
-                  isFocused && styles.iconContainerFocused,
-                ]}
-              >
+              {/* Main icon container */}
+              <View style={[styles.iconContainer]}>
                 <Ionicons
                   name={getIconName(route.name)}
-                  size={24}
+                  size={20}
                   color={
                     isFocused ? Colors.light.tint : Colors.light.iconDefault
                   }
                 />
-                {isFocused && <View style={styles.focusIndicator} />}
-              </View>
-              <View style={styles.labelContainer}>
-                <View style={[styles.label, isFocused && styles.labelFocused]}>
-                  <Ionicons
-                    name={getIconName(route.name)}
-                    size={20}
-                    color={
-                      isFocused ? Colors.light.tint : Colors.light.iconDefault
-                    }
-                  />
-                </View>
               </View>
             </TouchableOpacity>
           );
         })}
-
-        {/* Center FAB for adding tasks */}
-        <View style={styles.fabContainer}>
-          <TouchableOpacity
-            style={styles.fab}
-            onPress={() => {
-              // Emit event for opening add task modal
-              navigation.emit({
-                type: "tabPress",
-                target: "add-task",
-                canPreventDefault: true,
-              });
-            }}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="add" size={28} color="#FFFFFF" />
-          </TouchableOpacity>
-        </View>
       </View>
     </View>
   );
@@ -146,90 +116,31 @@ const styles = StyleSheet.create({
   },
   tabBar: {
     flexDirection: "row",
-    alignItems: "flex-end",
+    alignItems: "center",
     justifyContent: "space-between",
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
+    borderRadius: 50,
     paddingVertical: 8,
     paddingHorizontal: 8,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: -2,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 8,
-    height: 64,
+    borderColor: Colors.light.border,
+    borderWidth: 1,
   },
   tabItem: {
+    borderColor: Colors.light.border,
+    borderWidth: 1,
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 8,
   },
   iconContainer: {
+    borderColor: Colors.light.border,
+    borderWidth: 1,
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: 50,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
-  },
-  iconContainerFocused: {
-    backgroundColor: Colors.light.tintLight,
-  },
-  focusIndicator: {
-    position: "absolute",
-    bottom: 2,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: Colors.light.tint,
-  },
-  labelContainer: {
-    position: "absolute",
-    top: -28,
-    opacity: 0,
-  },
-  label: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    backgroundColor: "#FFFFFF",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  labelFocused: {
-    opacity: 1,
-  },
-  fabContainer: {
-    position: "absolute",
-    top: -20,
-    left: "50%",
-    marginLeft: -32,
-  },
-  fab: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: Colors.light.tint,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: Colors.light.tint,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
   },
 });
 
