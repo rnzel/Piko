@@ -1,53 +1,113 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Piko Task Manager - Design System
+ * Minimalist, clean, and calm interface with focus on clarity and usability
  */
 
-import { Platform } from 'react-native';
+import { Platform } from "react-native";
 
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
+// Primary accent color - soft blue
+const primaryBlue = "#5EACDA";
 
+// Color palette following 80% white, 20% accent rule
 export const Colors = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    // Backgrounds
+    background: "#FFFFFF", // Pure white (80% of UI)
+    card: "#F7F8FA", // Light gray for cards
+    surface: "#FFFFFF",
+
+    // Text
+    text: "#1A1A1A", // Dark gray/black for primary text
+    textSecondary: "#888888", // Gray for subtext
+    textTertiary: "#B0B0B0",
+
+    // Accent
+    tint: primaryBlue, // Soft blue accent (20% of UI)
+    tintLight: "rgba(94, 172, 218, 0.1)", // Light tint background
+    tintMedium: "rgba(94, 172, 218, 0.2)",
+
+    // Status colors
+    success: "#4CAF50",
+    error: "#EF5350",
+    warning: "#FFA726",
+    info: "#42A5F5",
+
+    // Icons
+    icon: "#687076",
+    iconDefault: "#888888",
+    iconSelected: primaryBlue,
+    tabIconDefault: "#888888",
+    tabIconSelected: primaryBlue,
+
+    // Borders & Dividers
+    border: "#E8E8E8",
+    divider: "#F0F0F0",
+
+    // Shadows
+    shadow: "rgba(0, 0, 0, 0.08)",
+    shadowMedium: "rgba(0, 0, 0, 0.12)",
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    // Backgrounds
+    background: "#1A1A1A",
+    card: "#242424",
+    surface: "#2C2C2C",
+
+    // Text
+    text: "#ECEDEE",
+    textSecondary: "#A0A0A0",
+    textTertiary: "#707070",
+
+    // Accent
+    tint: primaryBlue,
+    tintLight: "rgba(94, 172, 218, 0.15)",
+    tintMedium: "rgba(94, 172, 218, 0.25)",
+
+    // Status colors
+    success: "#66BB6A",
+    error: "#EF5350",
+    warning: "#FFA726",
+    info: "#42A5F5",
+
+    // Icons
+    icon: "#9BA1A6",
+    iconDefault: "#888888",
+    iconSelected: primaryBlue,
+    tabIconDefault: "#888888",
+    tabIconSelected: primaryBlue,
+
+    // Borders & Dividers
+    border: "#333333",
+    divider: "#2A2A2A",
+
+    // Shadows
+    shadow: "rgba(0, 0, 0, 0.3)",
+    shadowMedium: "rgba(0, 0, 0, 0.4)",
   },
 };
 
 export const Fonts = Platform.select({
   ios: {
     /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
+    sans: "system-ui",
     /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
+    serif: "ui-serif",
     /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
+    rounded: "ui-rounded",
     /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
+    mono: "ui-monospace",
   },
   default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
+    sans: "normal",
+    serif: "serif",
+    rounded: "normal",
+    mono: "monospace",
   },
   web: {
     sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
     serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
+    rounded:
+      "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
     mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
   },
 });
