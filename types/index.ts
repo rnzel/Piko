@@ -5,6 +5,7 @@ export interface Task {
   completed: boolean;
   groupId?: string;
   reminder?: boolean;
+  reminderAt?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -38,7 +39,7 @@ export interface AuthState {
 }
 
 // Task service types
-export type TaskFilter = "all" | "pending" | "completed";
+export type TaskFilter = "ongoing" | "completed";
 
 // Group service types
 export interface CreateGroupResult {

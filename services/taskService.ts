@@ -31,14 +31,15 @@ export const taskService = {
   // Create new task
   async createTask(
     text: string,
-    options?: { groupId?: string; reminder?: boolean },
+    options?: { groupId?: string; reminder?: boolean; reminderAt?: number },
   ): Promise<Task> {
     const newTask: Task = {
       id: generateId(),
       text,
       completed: false,
       groupId: options?.groupId,
-      reminder: options?.reminder,
+      reminder: options?.reminder ?? !!options?.reminderAt,
+      reminderAt: options?.reminderAt,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
