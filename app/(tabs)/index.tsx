@@ -8,7 +8,7 @@ import DateTimePicker, {
   DateTimePickerEvent,
 } from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "@react-navigation/native";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Dimensions,
@@ -25,7 +25,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
 const MIN_TASK_LENGTH = 3;
 const MAX_TASK_LENGTH = 120;
 
@@ -43,7 +43,9 @@ const TasksScreen = () => {
   const [showReminderDatePicker, setShowReminderDatePicker] = useState(false);
   const [showReminderTimePicker, setShowReminderTimePicker] = useState(false);
   const insets = useSafeAreaInsets();
+  const inputRef = useRef<TextInput>(null);
   const trimmedTaskText = newTaskText.trim();
+  const modalSheetMaxHeight = height - insets.top - insets.bottom - 48;
   const isSelectionMode = selectedTaskIds.length > 0;
   const isTaskLengthValid =
     trimmedTaskText.length >= MIN_TASK_LENGTH &&
@@ -78,6 +80,14 @@ const TasksScreen = () => {
         .catch((error) => console.error("Error loading groups:", error));
     }, [loadTasks]),
   );
+
+  useEffect(() => {
+    if (showAddTaskModal) {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 200);
+    }
+  }, [showAddTaskModal]);
 
   const selectedFolderName =
     selectedFolderId === "personal"
@@ -364,13 +374,6 @@ const TasksScreen = () => {
               </TouchableOpacity>
             </>
           )}
-          <TouchableOpacity
-            onPress={() => setShowAddTaskModal(true)}
-            style={styles.headerAction}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="add" size={22} color={Colors.light.tint} />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -505,7 +508,7 @@ const TasksScreen = () => {
                             : "ellipse-outline"
                           : task.completed
                             ? "checkbox"
-                            : "square-outline"
+                            : "ellipse-outline"
                       }
                       size={24}
                       color={
@@ -568,10 +571,14 @@ const TasksScreen = () => {
         animationType="slide"
         onRequestClose={() => handleCloseAddTaskModal(true)}
       >
-        <KeyboardAvoidingView
-          behavior="padding"
-          keyboardVerticalOffset={16}
-          style={styles.modalRoot}
+        <View
+          style={[
+            styles.modalRoot,
+            {
+              paddingTop: insets.top + 24,
+              paddingBottom: insets.bottom + 3,
+            },
+          ]}
         >
           <TouchableWithoutFeedback
             onPress={() => handleCloseAddTaskModal(true)}
@@ -579,99 +586,117 @@ const TasksScreen = () => {
             <View style={styles.modalOverlay} />
           </TouchableWithoutFeedback>
 
-          <View style={styles.modalSheet}>
-            <View style={styles.modalHandle} />
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>New Task</Text>
-            </View>
-
-            <ScrollView
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
+          <KeyboardAvoidingView
+            behavior="padding"
+            keyboardVerticalOffset={20}
+            style={{ width: "100%" }}
+          >
+            <View
+              style={[
+                styles.modalSheet,
+                {
+                  maxHeight: modalSheetMaxHeight,
+                },
+              ]}
             >
-              <View style={styles.modalInputCard}>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="What needs to be done?"
-                  placeholderTextColor={Colors.light.textTertiary}
-                  value={newTaskText}
-                  onChangeText={setNewTaskText}
-                  maxLength={MAX_TASK_LENGTH}
-                  multiline
-                  autoFocus
-                />
-                <Text style={styles.modalInputHint}>
-                  {`${newTaskText.length}/${MAX_TASK_LENGTH} characters`}
-                </Text>
+              <View style={styles.modalHandle} />
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>New Task</Text>
               </View>
+              <ScrollView
+                contentContainerStyle={[
+                  styles.modalScrollContent,
+                  { flexGrow: 1, paddingBottom: 8 },
+                ]}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                showsVerticalScrollIndicator={false}
+              >
+                <View style={styles.modalInputCard}>
+                  <TextInput
+                    ref={inputRef}
+                    style={styles.modalInput}
+                    placeholder="What needs to be done?"
+                    placeholderTextColor={Colors.light.textTertiary}
+                    value={newTaskText}
+                    onChangeText={setNewTaskText}
+                    maxLength={MAX_TASK_LENGTH}
+                    multiline
+                    autoFocus={false}
+                    onFocus={() => {}}
+                  />
+                  <Text style={styles.modalInputHint}>
+                    {`${newTaskText.length}/${MAX_TASK_LENGTH}`}
+                  </Text>
+                </View>
 
-              <View style={styles.modalActionRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.modalReminderButton,
-                    newTaskReminderAt && styles.modalReminderButtonActive,
-                  ]}
-                  onPress={openReminderPicker}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.modalReminderButtonLeft}>
-                    <Ionicons
-                      name="alarm-outline"
-                      size={18}
-                      color={
-                        newTaskReminder
-                          ? Colors.light.tint
-                          : Colors.light.iconDefault
-                      }
-                    />
-                    <Text
-                      style={[
-                        styles.modalReminderButtonText,
-                        newTaskReminderAt &&
-                          styles.modalReminderButtonTextActive,
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {newTaskReminderAt
-                        ? formatReminderDateTime(newTaskReminderAt)
-                        : "Add Reminder"}
-                    </Text>
-                  </View>
-
-                  {newTaskReminderAt && (
-                    <TouchableOpacity
-                      style={styles.modalReminderClearIconButton}
-                      onPress={() => {
-                        setNewTaskReminder(false);
-                        setNewTaskReminderAt(null);
-                      }}
-                      hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
-                    >
+                <View style={styles.modalActionRow}>
+                  <TouchableOpacity
+                    style={[
+                      styles.modalReminderButton,
+                      newTaskReminderAt && styles.modalReminderButtonActive,
+                    ]}
+                    onPress={openReminderPicker}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.modalReminderButtonLeft}>
                       <Ionicons
-                        name="close"
-                        size={14}
-                        color={Colors.light.textSecondary}
+                        name="alarm-outline"
+                        size={18}
+                        color={
+                          newTaskReminder
+                            ? Colors.light.tint
+                            : Colors.light.iconDefault
+                        }
                       />
-                    </TouchableOpacity>
-                  )}
-                </TouchableOpacity>
+                      <Text
+                        style={[
+                          styles.modalReminderButtonText,
+                          newTaskReminderAt &&
+                            styles.modalReminderButtonTextActive,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {newTaskReminderAt
+                          ? formatReminderDateTime(newTaskReminderAt)
+                          : "Add Reminder"}
+                      </Text>
+                    </View>
 
-                <TouchableOpacity
-                  onPress={createTaskFromModal}
-                  disabled={!isTaskLengthValid}
-                  style={[
-                    styles.modalSaveButton,
-                    !isTaskLengthValid && styles.modalSaveButtonDisabled,
-                  ]}
-                >
-                  <Text style={styles.modalSaveText}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
+                    {newTaskReminderAt && (
+                      <TouchableOpacity
+                        style={styles.modalReminderClearIconButton}
+                        onPress={() => {
+                          setNewTaskReminder(false);
+                          setNewTaskReminderAt(null);
+                        }}
+                        hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+                      >
+                        <Ionicons
+                          name="close"
+                          size={14}
+                          color={Colors.light.textSecondary}
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </TouchableOpacity>
 
-            <View style={styles.modalFooter} />
-          </View>
-        </KeyboardAvoidingView>
+                  <TouchableOpacity
+                    onPress={createTaskFromModal}
+                    disabled={!isTaskLengthValid}
+                    style={[
+                      styles.modalSaveButton,
+                      !isTaskLengthValid && styles.modalSaveButtonDisabled,
+                    ]}
+                  >
+                    <Text style={styles.modalSaveText}>Save</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+              <View style={styles.modalFooter} />
+            </View>
+          </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       {showReminderDatePicker && (
@@ -693,7 +718,13 @@ const TasksScreen = () => {
         />
       )}
 
-      <View style={{ height: 100 }} />
+      <TouchableOpacity
+        onPress={() => setShowAddTaskModal(true)}
+        style={[styles.floatingAddButton, { bottom: insets.bottom + 92 }]}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="add" size={26} color="#FFFFFF" />
+      </TouchableOpacity>
     </View>
   );
 };
@@ -701,8 +732,7 @@ const TasksScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.light.background,
-    paddingHorizontal: 20,
+    backgroundColor: Colors.light.tint,
   },
   authContainer: {
     flex: 1,
@@ -713,10 +743,15 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 28,
     fontWeight: "bold",
-    color: Colors.light.text,
+    color: "#FFFFFF",
     marginBottom: 4,
+    paddingHorizontal: 20,
   },
-  subtitle: { fontSize: 15, color: Colors.light.textSecondary },
+  subtitle: {
+    fontSize: 15,
+    color: Colors.light.textSecondary,
+    paddingHorizontal: 20,
+  },
   description: {
     fontSize: 14,
     color: Colors.light.textSecondary,
@@ -773,7 +808,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.error,
     borderColor: Colors.light.error,
   },
-  statsContainer: { flexDirection: "row", gap: 12, marginBottom: 20 },
+  statsContainer: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 20,
+    paddingHorizontal: 20,
+  },
   statCard: {
     flex: 1,
     backgroundColor: Colors.light.card,
@@ -786,7 +826,7 @@ const styles = StyleSheet.create({
   statNumberCompleted: { color: Colors.light.tint },
   statLabel: { fontSize: 13, color: Colors.light.textSecondary, marginTop: 4 },
   statLabelCompleted: { color: Colors.light.tint },
-  filterContainer: { marginBottom: 16 },
+  filterContainer: { marginBottom: 16, paddingHorizontal: 20 },
   filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   filterTab: {
     paddingHorizontal: 14,
@@ -841,16 +881,24 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "600",
   },
-  taskList: { flex: 1 },
-  taskListContent: { paddingBottom: 20 },
+  taskList: {
+    backgroundColor: "#FFFFFF",
+    flex: 1,
+    paddingTop: 12,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: 10,
+  },
+  taskListContent: { paddingBottom: 140 },
   taskItem: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: Colors.light.border,
-    borderRadius: 16,
+    borderRadius: 28,
     padding: 16,
+    marginHorizontal: 16,
     marginBottom: 10,
   },
   taskItemSelected: {
@@ -903,23 +951,34 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: "center",
   },
-  modalRoot: { flex: 1, justifyContent: "flex-end" },
+  modalRoot: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "flex-end",
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+  },
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0,0,0,0.4)",
   },
   modalSheet: {
     backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
+    borderRadius: 24,
+    paddingHorizontal: 16,
     paddingTop: 12,
-    paddingBottom: 24,
-    minHeight: 300,
-    maxHeight: "80%",
+    paddingBottom: 8,
+    minHeight: 260,
+    maxWidth: 420,
+    width: "100%",
+    alignSelf: "stretch",
+  },
+  modalScrollContent: {
+    paddingBottom: 4,
   },
   modalInputCard: {
-    backgroundColor: Colors.light.card,
+    borderColor: Colors.light.border,
+    borderWidth: 1,
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -943,15 +1002,14 @@ const styles = StyleSheet.create({
   },
   modalHeader: {
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 12,
   },
   modalTitle: { fontSize: 18, fontWeight: "600", color: Colors.light.text },
   modalFooter: {
-    marginTop: 12,
     alignItems: "stretch",
   },
   modalActionRow: {
-    marginTop: 14,
+    marginTop: 10,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
@@ -997,18 +1055,31 @@ const styles = StyleSheet.create({
   },
   modalSaveButton: {
     backgroundColor: Colors.light.tint,
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    borderRadius: 50,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
   },
   modalSaveButtonDisabled: { backgroundColor: Colors.light.border },
-  modalSaveText: { color: "#FFFFFF", fontWeight: "600" },
+  modalSaveText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+  },
   modalInput: {
-    fontSize: 18,
+    fontSize: 16,
     color: Colors.light.text,
-    minHeight: 80,
+    minHeight: 72,
     textAlignVertical: "top",
     marginBottom: 0,
+  },
+  floatingAddButton: {
+    position: "absolute",
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.light.tint,
   },
 });
 
