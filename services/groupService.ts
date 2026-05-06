@@ -1,22 +1,10 @@
 import { groupStorage } from "@/services/storageService";
+import { syncFacade } from "@/services/syncFacade";
+import { taskService } from "@/services/taskService";
 import { Group } from "@/types";
+import { generateGroupCode, generateId } from "@/utils/ids";
 
-// Generate unique ID
-const generateId = (): string => {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-};
-
-// Generate 6-digit group code
-const generateGroupCode = (): string => {
-  const chars = "0123456789";
-  let code = "";
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-};
-
-// Group service for local storage (guest mode)
+// Group service with sync support
 export const groupService = {
   // Get all groups
   async getGroups(): Promise<Group[]> {
@@ -24,17 +12,31 @@ export const groupService = {
   },
 
   // Create new group
-  async createGroup(name: string, createdBy: string): Promise<Group> {
+  async createGroup(
+    name: string,
+    createdBy: string,
+    invitedMembers: string[] = [],
+  ): Promise<Group> {
+    const members = Array.from(new Set([createdBy, ...invitedMembers]));
     const newGroup: Group = {
       id: generateId(),
       name,
       code: generateGroupCode(),
-      members: [createdBy],
+      members,
       createdAt: Date.now(),
       createdBy,
     };
 
-    await groupStorage.addGroup(newGroup);
+    // Ensure code uniqueness
+    let attempt = 0;
+    while (attempt < 5) {
+      const exists = await this.codeExists(newGroup.code);
+      if (!exists) break;
+      newGroup.code = generateGroupCode();
+      attempt++;
+    }
+
+    await syncFacade.addGroup(newGroup);
     return newGroup;
   },
 
@@ -47,7 +49,7 @@ export const groupService = {
       // Add user to members if not already a member
       if (!group.members.includes(userId)) {
         group.members.push(userId);
-        await groupStorage.updateGroup(group);
+        await syncFacade.updateGroup(group);
       }
       return group;
     }
@@ -62,7 +64,7 @@ export const groupService = {
 
     if (group) {
       group.members = group.members.filter((m) => m !== userId);
-      await groupStorage.updateGroup(group);
+      await syncFacade.updateGroup(group);
     }
   },
 
@@ -72,7 +74,10 @@ export const groupService = {
     const group = groups.find((g) => g.id === groupId);
 
     if (group && group.createdBy === userId) {
-      await groupStorage.deleteGroup(groupId);
+      // Delete all tasks belonging to this group
+      const tasks = await taskService.getTasksByGroup(groupId);
+      await Promise.all(tasks.map((t) => taskService.deleteTask(t.id)));
+      await syncFacade.deleteGroup(groupId);
     }
   },
 
@@ -110,7 +115,7 @@ export const groupService = {
 
     if (group) {
       group.name = newName;
-      await groupStorage.updateGroup(group);
+      await syncFacade.updateGroup(group);
       return group;
     }
 
@@ -131,7 +136,7 @@ export const groupService = {
 
   // Clear all groups
   async clearAllGroups(): Promise<void> {
-    await groupStorage.clearGroups();
+    await syncFacade.saveGroups([]);
   },
 };
 

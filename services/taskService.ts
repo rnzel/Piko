@@ -1,12 +1,9 @@
 import { taskStorage } from "@/services/storageService";
+import { syncFacade } from "@/services/syncFacade";
 import { Task } from "@/types";
+import { generateId } from "@/utils/ids";
 
-// Generate unique ID
-const generateId = (): string => {
-  return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-};
-
-// Task service for local storage (guest mode)
+// Task service with sync support
 export const taskService = {
   // Get all tasks
   async getTasks(): Promise<Task[]> {
@@ -44,7 +41,20 @@ export const taskService = {
       updatedAt: Date.now(),
     };
 
-    await taskStorage.addTask(newTask);
+    await syncFacade.addTask(newTask);
+    // Schedule reminder if set
+    if (newTask.reminder && newTask.reminderAt) {
+      try {
+        const { notificationService } =
+          await import("@/services/notificationService");
+        await notificationService.scheduleReminder(
+          newTask.id,
+          newTask.reminderAt,
+        );
+      } catch (e) {
+        console.error("Failed to schedule reminder:", e);
+      }
+    }
     return newTask;
   },
 
@@ -58,7 +68,17 @@ export const taskService = {
         completed: !task.completed,
         updatedAt: Date.now(),
       };
-      await taskStorage.updateTask(updatedTask);
+      await syncFacade.updateTask(updatedTask);
+      // Cancel reminder if marking completed
+      if (updatedTask.completed && updatedTask.reminder) {
+        try {
+          const { notificationService } =
+            await import("@/services/notificationService");
+          await notificationService.cancelReminder(updatedTask.id);
+        } catch (e) {
+          console.error("Failed to cancel reminder:", e);
+        }
+      }
       return updatedTask;
     }
     return null;
@@ -77,7 +97,7 @@ export const taskService = {
         ...updates,
         updatedAt: Date.now(),
       };
-      await taskStorage.updateTask(updatedTask);
+      await syncFacade.updateTask(updatedTask);
       return updatedTask;
     }
     return null;
@@ -85,14 +105,22 @@ export const taskService = {
 
   // Delete task
   async deleteTask(taskId: string): Promise<void> {
-    await taskStorage.deleteTask(taskId);
+    // Cancel scheduled reminder if any
+    try {
+      const { notificationService } =
+        await import("@/services/notificationService");
+      await notificationService.cancelReminder(taskId);
+    } catch (e) {
+      // ignore
+    }
+    await syncFacade.deleteTask(taskId);
   },
 
   // Delete completed tasks
   async deleteCompletedTasks(): Promise<void> {
     const tasks = await this.getTasks();
     const pendingTasks = tasks.filter((t) => !t.completed);
-    await taskStorage.saveTasks(pendingTasks);
+    await syncFacade.saveTasks(pendingTasks);
   },
 
   // Get task by ID
@@ -121,7 +149,7 @@ export const taskService = {
 
   // Clear all tasks
   async clearAllTasks(): Promise<void> {
-    await taskStorage.clearTasks();
+    await syncFacade.saveTasks([]);
   },
 };
 

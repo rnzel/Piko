@@ -1,27 +1,29 @@
+import { notificationService } from "@/services/notificationService";
 import {
-    clearAllStorage,
-    guestStorage,
-    userStorage,
+  clearAllStorage,
+  guestStorage,
+  userStorage,
 } from "@/services/storageService";
+import { syncFacade } from "@/services/syncFacade";
 import { AuthState, UserProfile } from "@/types";
 import {
-    signOut as firebaseSignOut,
-    getAuth,
-    GoogleAuthProvider,
-    onAuthStateChanged,
-    signInWithCredential
+  signOut as firebaseSignOut,
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithCredential,
 } from "@react-native-firebase/auth";
 import {
-    GoogleSignin,
-    statusCodes,
+  GoogleSignin,
+  statusCodes,
 } from "@react-native-google-signin/google-signin";
 import React, {
-    createContext,
-    ReactNode,
-    useCallback,
-    useContext,
-    useEffect,
-    useState,
+  createContext,
+  ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
 } from "react";
 import { Alert } from "react-native";
 
@@ -113,6 +115,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await guestStorage.setIsGuest(false);
       setUser(userProfile);
       setIsGuest(false);
+
+      // Initialize Firebase sync for the authenticated user
+      syncFacade.initialize(firebaseUserCredential.user.uid);
+      // Sync remote data down to local, then upload any local-only data
+      try {
+        await syncFacade.syncDown();
+      } catch (syncError) {
+        console.warn(
+          "[AuthContext] initial syncDown failed, will retry",
+          syncError,
+        );
+      }
+      try {
+        const localTasks = await (
+          await import("@/services/storageService")
+        ).taskStorage.getTasks();
+        const localGroups = await (
+          await import("@/services/storageService")
+        ).groupStorage.getGroups();
+        if (localTasks.length > 0 || localGroups.length > 0) {
+          await syncFacade.uploadLocalData();
+        }
+      } catch (uploadError) {
+        console.warn("[AuthContext] uploadLocalData failed", uploadError);
+      }
     } catch (error) {
       const errorCode =
         typeof error === "object" &&
@@ -159,6 +186,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   const signOut = useCallback(async () => {
     try {
+      syncFacade.deinitialize();
       await firebaseSignOut(getAuth());
       await GoogleSignin.signOut();
       await clearAllStorage();
@@ -177,6 +205,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   }, []);
 
   useEffect(() => {
+    // Request notification permissions once on startup
+    notificationService
+      .requestPermissions()
+      .catch((e) =>
+        console.warn("[AuthContext] notification permission request failed", e),
+      );
+
     // Configure Google Sign-In
     GoogleSignin.configure({
       webClientId:

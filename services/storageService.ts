@@ -6,7 +6,62 @@ const STORAGE_KEYS = {
   GROUPS: "@piko_groups",
   USER: "@piko_user",
   IS_GUEST: "@piko_is_guest",
+  SCHEMA_VERSION: "@piko_schema_version",
 };
+
+const CURRENT_SCHEMA_VERSION = 1;
+
+// Schema migration runner
+const runMigrations = async (): Promise<void> => {
+  try {
+    const storedVersion = await AsyncStorage.getItem(
+      STORAGE_KEYS.SCHEMA_VERSION,
+    );
+    const version = storedVersion ? parseInt(storedVersion, 10) : 0;
+
+    if (version >= CURRENT_SCHEMA_VERSION) return;
+    if (isNaN(version)) return;
+
+    // Migration from v0 to v1: ensure timestamps are numbers (legacy fix)
+    if (version < 1) {
+      const tasksJson = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
+      if (tasksJson) {
+        const tasks: Task[] = JSON.parse(tasksJson);
+        let changed = false;
+        const migrated = tasks.map((t) => {
+          if (typeof t.createdAt === "string") {
+            changed = true;
+            return {
+              ...t,
+              createdAt: new Date(t.createdAt).getTime(),
+              updatedAt: new Date(t.updatedAt).getTime(),
+            };
+          }
+          return t;
+        });
+        if (changed) {
+          await AsyncStorage.setItem(
+            STORAGE_KEYS.TASKS,
+            JSON.stringify(migrated),
+          );
+        }
+      }
+    }
+
+    await AsyncStorage.setItem(
+      STORAGE_KEYS.SCHEMA_VERSION,
+      String(CURRENT_SCHEMA_VERSION),
+    );
+    console.log(
+      `[storageService] schema migrated to v${CURRENT_SCHEMA_VERSION}`,
+    );
+  } catch (e) {
+    console.error("[storageService] migration error", e);
+  }
+};
+
+// Run migrations immediately on import
+runMigrations();
 
 // Task storage operations
 export const taskStorage = {
