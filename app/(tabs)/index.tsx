@@ -238,7 +238,7 @@ const TasksScreen = () => {
       return;
     }
     try {
-      await taskService.createTask(trimmedTaskText, {
+      const newTask = await taskService.createTask(trimmedTaskText, {
         reminder: newTaskReminder,
         reminderAt: newTaskReminderAt?.getTime(),
       });
@@ -246,7 +246,9 @@ const TasksScreen = () => {
       setNewTaskText("");
       setNewTaskReminder(false);
       setNewTaskReminderAt(null);
-      await loadTasks();
+      setTasks((prev) =>
+        [newTask, ...prev].sort((a, b) => b.createdAt - a.createdAt),
+      );
     } catch (error) {
       console.error("Error creating task:", error);
     }
@@ -357,38 +359,10 @@ const TasksScreen = () => {
         </View>
         <View style={styles.headerActions}>
           {isSelectionMode && (
-            <>
-              <TouchableOpacity
-                onPress={clearTaskSelection}
-                style={styles.headerAction}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="close" size={20} color={Colors.light.text} />
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={deleteSelectedTasks}
-                style={[styles.headerAction, styles.headerActionDanger]}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
-              </TouchableOpacity>
-            </>
+            <Text style={styles.selectedCountText}>
+              {selectedTaskIds.length} selected
+            </Text>
           )}
-        </View>
-      </View>
-
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>{pendingCount}</Text>
-          <Text style={styles.statLabel}>Pending</Text>
-        </View>
-        <View style={[styles.statCard, styles.statCardCompleted]}>
-          <Text style={[styles.statNumber, styles.statNumberCompleted]}>
-            {completedCount}
-          </Text>
-          <Text style={[styles.statLabel, styles.statLabelCompleted]}>
-            Completed
-          </Text>
         </View>
       </View>
 
@@ -456,6 +430,7 @@ const TasksScreen = () => {
         contentContainerStyle={styles.taskListContent}
         showsVerticalScrollIndicator={false}
       >
+        <Text style={styles.sectionTitle}>Task</Text>
         {filteredTasks.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons
@@ -507,7 +482,7 @@ const TasksScreen = () => {
                             ? "checkmark-circle"
                             : "ellipse-outline"
                           : task.completed
-                            ? "checkbox"
+                            ? "checkmark-circle"
                             : "ellipse-outline"
                       }
                       size={24}
@@ -720,11 +695,40 @@ const TasksScreen = () => {
 
       <TouchableOpacity
         onPress={() => setShowAddTaskModal(true)}
-        style={[styles.floatingAddButton, { bottom: insets.bottom + 92 }]}
+        style={[styles.floatingAddButton, { bottom: insets.bottom + 96 }]}
         activeOpacity={0.85}
       >
-        <Ionicons name="add" size={26} color="#FFFFFF" />
+        <Ionicons name="add" size={28} color="#FFFFFF" />
       </TouchableOpacity>
+
+      {isSelectionMode && (
+        <View
+          style={[
+            styles.bottomActionBar,
+            { paddingBottom: insets.bottom + 12 },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={clearTaskSelection}
+            style={styles.bottomActionCancel}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="close" size={20} color={Colors.light.text} />
+            <Text style={styles.bottomActionCancelText}>Cancel</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            onPress={deleteSelectedTasks}
+            style={styles.bottomActionDelete}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trash-outline" size={20} color="#FFFFFF" />
+            <Text style={styles.bottomActionDeleteText}>
+              Delete ({selectedTaskIds.length})
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 };
@@ -732,7 +736,7 @@ const TasksScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.light.tint,
+    backgroundColor: Colors.light.background,
   },
   authContainer: {
     flex: 1,
@@ -741,14 +745,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   greeting: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "bold",
-    color: "#FFFFFF",
-    marginBottom: 4,
+    color: Colors.light.text,
+    marginBottom: 6,
     paddingHorizontal: 20,
   },
   subtitle: {
-    fontSize: 15,
+    fontSize: 16,
     color: Colors.light.textSecondary,
     paddingHorizontal: 20,
   },
@@ -791,47 +795,16 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 20,
+    marginBottom: 24,
   },
-  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
-  headerAction: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-    backgroundColor: "#FFFFFF",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  headerActionDanger: {
-    backgroundColor: Colors.light.error,
-    borderColor: Colors.light.error,
-  },
-  statsContainer: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 20,
-    paddingHorizontal: 20,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: Colors.light.card,
-    borderRadius: 16,
-    padding: 16,
-    alignItems: "center",
-  },
-  statCardCompleted: { backgroundColor: Colors.light.tintLight },
-  statNumber: { fontSize: 28, fontWeight: "bold", color: Colors.light.text },
-  statNumberCompleted: { color: Colors.light.tint },
-  statLabel: { fontSize: 13, color: Colors.light.textSecondary, marginTop: 4 },
-  statLabelCompleted: { color: Colors.light.tint },
-  filterContainer: { marginBottom: 16, paddingHorizontal: 20 },
+  headerActions: { flexDirection: "row", alignItems: "center", right: 20 },
+
+  filterContainer: { marginBottom: 20, paddingHorizontal: 20 },
   filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   filterTab: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 24,
     borderWidth: 1,
     borderColor: Colors.light.border,
     backgroundColor: "#FFFFFF",
@@ -840,15 +813,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   filterTabActiveOngoing: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: Colors.light.tintLight,
     borderColor: Colors.light.tint,
   },
   filterTabActiveCompleted: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: Colors.light.tintLight,
     borderColor: Colors.light.tint,
   },
   filterTabText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "500",
     color: Colors.light.textSecondary,
     includeFontPadding: false,
@@ -863,9 +836,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.light.border,
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 24,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
   folderDropdownActive: {
     backgroundColor: Colors.light.tint,
@@ -873,7 +846,7 @@ const styles = StyleSheet.create({
   },
   folderDropdownText: {
     fontSize: 13,
-    color: "white",
+    color: Colors.light.textSecondary,
     fontWeight: "500",
     maxWidth: 100,
   },
@@ -881,74 +854,78 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontWeight: "600",
   },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: Colors.light.text,
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
   taskList: {
     backgroundColor: "#FFFFFF",
     flex: 1,
     paddingTop: 12,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    marginTop: 10,
   },
-  taskListContent: { paddingBottom: 140 },
+  taskListContent: { paddingBottom: 144 },
   taskItem: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: Colors.light.border,
-    borderRadius: 28,
-    padding: 16,
+    borderRadius: 32,
+    padding: 14,
     marginHorizontal: 16,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   taskItemSelected: {
     borderColor: Colors.light.tint,
     backgroundColor: Colors.light.tintLight,
   },
   taskItemCompleted: { opacity: 0.6, backgroundColor: Colors.light.card },
-  taskCheckbox: { marginRight: 12 },
+  taskCheckbox: { marginRight: 14 },
   taskContent: { flex: 1 },
-  taskText: { fontSize: 16, color: Colors.light.text, fontWeight: "500" },
+  taskText: { fontSize: 17, color: Colors.light.text, fontWeight: "500" },
   taskTextCompleted: {
     textDecorationLine: "line-through",
     color: Colors.light.textTertiary,
   },
   taskMetaRow: {
-    marginTop: 8,
+    marginTop: 10,
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 6,
+    gap: 8,
   },
   taskMetaBadge: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
     borderRadius: 999,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
     backgroundColor: Colors.light.card,
     maxWidth: "100%",
   },
   taskMetaText: {
-    fontSize: 11,
+    fontSize: 12,
     color: Colors.light.textSecondary,
   },
   emptyState: {
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 60,
+    paddingTop: 80,
     paddingBottom: 40,
   },
   emptyTitle: {
     fontSize: 18,
     fontWeight: "600",
     color: Colors.light.textTertiary,
-    marginTop: 16,
+    marginTop: 20,
   },
   emptySubtitle: {
     fontSize: 14,
     color: Colors.light.textTertiary,
-    marginTop: 8,
+    marginTop: 12,
     textAlign: "center",
   },
   modalRoot: {
@@ -965,7 +942,7 @@ const styles = StyleSheet.create({
   modalSheet: {
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 8,
     minHeight: 260,
@@ -979,9 +956,9 @@ const styles = StyleSheet.create({
   modalInputCard: {
     borderColor: Colors.light.border,
     borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     marginBottom: 12,
   },
   modalInputHint: {
@@ -993,27 +970,27 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
   },
   modalHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
+    width: 48,
+    height: 5,
+    borderRadius: 2.5,
     backgroundColor: Colors.light.border,
     alignSelf: "center",
-    marginBottom: 12,
+    marginBottom: 16,
   },
   modalHeader: {
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 16,
   },
-  modalTitle: { fontSize: 18, fontWeight: "600", color: Colors.light.text },
+  modalTitle: { fontSize: 20, fontWeight: "600", color: Colors.light.text },
   modalFooter: {
     alignItems: "stretch",
   },
   modalActionRow: {
-    marginTop: 10,
+    marginTop: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    gap: 10,
+    gap: 12,
   },
   modalReminderButton: {
     flex: 1,
@@ -1071,12 +1048,62 @@ const styles = StyleSheet.create({
     textAlignVertical: "top",
     marginBottom: 0,
   },
+  selectedCountText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: Colors.light.tint,
+  },
+  bottomActionBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 16,
+    right: 16,
+    bottom: 80,
+    gap: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingTop: 20,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+  },
+  bottomActionCancel: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 50,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    backgroundColor: "#FFFFFF",
+  },
+  bottomActionCancelText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: Colors.light.text,
+  },
+  bottomActionDelete: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingVertical: 14,
+    borderRadius: 50,
+    backgroundColor: Colors.light.error,
+  },
+  bottomActionDeleteText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#FFFFFF",
+  },
   floatingAddButton: {
     position: "absolute",
     right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: Colors.light.tint,

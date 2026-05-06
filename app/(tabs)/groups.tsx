@@ -1,4 +1,3 @@
-
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { groupService } from "@/services/groupService";
@@ -461,7 +460,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.tint,
     paddingVertical: 12,
     paddingHorizontal: 24,
-    borderRadius: 16,
+    borderRadius: 50,
     gap: 8,
   },
   emptyButtonText: {
