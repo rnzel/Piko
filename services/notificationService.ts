@@ -52,7 +52,11 @@ export const notificationService = {
   },
 
   // Schedule a local reminder for a task id at a unix timestamp (ms)
-  async scheduleReminder(taskId: string, timestamp: number): Promise<void> {
+  async scheduleReminder(
+    taskId: string,
+    timestamp: number,
+    taskText?: string,
+  ): Promise<void> {
     try {
       // ensure timestamp is in the future
       const now = Date.now();
@@ -60,8 +64,8 @@ export const notificationService = {
 
       const scheduledId = await Notifications.scheduleNotificationAsync({
         content: {
-          title: "Reminder",
-          body: "You have a task reminder.",
+          title: "Task Reminder",
+          body: taskText || "You have a task reminder.",
           data: { taskId },
         },
         trigger: {

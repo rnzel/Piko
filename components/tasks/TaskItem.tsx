@@ -14,6 +14,35 @@ type Props = {
   onLongPress: (taskId: string) => void;
 };
 
+const getPriorityStyles = (priority: "low" | "medium" | "high") => {
+  switch (priority) {
+    case "low":
+      return {
+        backgroundColor: Colors.light.priorityLowBackground,
+        textColor: Colors.light.priorityLowText,
+        borderColor: Colors.light.priorityLowText,
+      };
+    case "medium":
+      return {
+        backgroundColor: Colors.light.priorityMediumBackground,
+        textColor: Colors.light.priorityMediumText,
+        borderColor: Colors.light.priorityMediumText,
+      };
+    case "high":
+      return {
+        backgroundColor: Colors.light.priorityHighBackground,
+        textColor: Colors.light.priorityHighText,
+        borderColor: Colors.light.priorityHighText,
+      };
+    default:
+      return {
+        backgroundColor: Colors.light.card,
+        textColor: Colors.light.textSecondary,
+        borderColor: Colors.light.border,
+      };
+  }
+};
+
 const TaskItem = ({
   task,
   isSelected,
@@ -85,14 +114,53 @@ const TaskItem = ({
             </Text>
           </View>
 
+          {task.priority && (
+            <View
+              style={[
+                styles.taskMetaBadge,
+                {
+                  backgroundColor: getPriorityStyles(task.priority)
+                    .backgroundColor,
+                  borderColor: getPriorityStyles(task.priority).borderColor,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.taskMetaText,
+                  { color: getPriorityStyles(task.priority).textColor },
+                ]}
+              >
+                {task.priority.charAt(0).toUpperCase() +
+                  task.priority.slice(1) +
+                  " Priority"}
+              </Text>
+            </View>
+          )}
+
           {task.reminderAt && (
-            <View style={styles.taskMetaBadge}>
+            <View
+              style={{
+                backgroundColor: Colors.light.tintLight,
+                borderColor: Colors.light.tint,
+                borderWidth: 1,
+                borderRadius: 999,
+                paddingVertical: 6,
+                paddingHorizontal: 10,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
               <Ionicons
                 name="alarm-outline"
                 size={12}
                 color={Colors.light.tint}
               />
-              <Text style={styles.taskMetaText} numberOfLines={1}>
+              <Text
+                style={{ color: Colors.light.tint, fontSize: 12 }}
+                numberOfLines={1}
+              >
                 {formatReminderDateTime(new Date(task.reminderAt))}
               </Text>
             </View>
@@ -142,6 +210,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     backgroundColor: Colors.light.card,
     maxWidth: "100%",
+    borderColor: Colors.light.border,
+    borderWidth: 1,
   },
   taskMetaText: {
     fontSize: 12,

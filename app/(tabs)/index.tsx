@@ -28,6 +28,23 @@ const formatReminderDateTime = (date: Date) => {
   });
 };
 
+const priorityMap = {
+  high: 3,
+  medium: 2,
+  low: 1,
+};
+
+const sortTasks = (a: Task, b: Task) => {
+  const aPriority = a.priority ?? "medium"; // Fallback for safety, though normalizeTask should handle
+  const bPriority = b.priority ?? "medium"; // Fallback for safety
+
+  const priorityDiff = priorityMap[bPriority] - priorityMap[aPriority];
+  if (priorityDiff !== 0) {
+    return priorityDiff;
+  }
+  return b.createdAt - a.createdAt;
+};
+
 const TasksScreen = () => {
   const { user, isGuest, signIn, continueAsGuest } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -47,7 +64,7 @@ const TasksScreen = () => {
     setLoadingTasks(true);
     try {
       const loadedTasks = await taskService.getTasks();
-      loadedTasks.sort((a, b) => b.createdAt - a.createdAt);
+      loadedTasks.sort(sortTasks);
       setTasks(loadedTasks);
     } catch (error) {
       console.error("Error loading tasks:", error);
@@ -105,7 +122,7 @@ const TasksScreen = () => {
       const updatedTask = await taskService.toggleTask(taskId);
       if (updatedTask) {
         setTasks((prev) =>
-          prev.map((t) => (t.id === taskId ? updatedTask : t)),
+          prev.map((t) => (t.id === taskId ? updatedTask : t)).sort(sortTasks),
         );
       }
     } catch (error) {
@@ -122,7 +139,9 @@ const TasksScreen = () => {
         onPress: async () => {
           try {
             await taskService.deleteTask(taskId);
-            setTasks((prev) => prev.filter((t) => t.id !== taskId));
+            setTasks((prev) =>
+              prev.filter((t) => t.id !== taskId).sort(sortTasks),
+            );
           } catch (error) {
             console.error("Error deleting task:", error);
           }
@@ -160,7 +179,9 @@ const TasksScreen = () => {
                 selectedTaskIds.map((taskId) => taskService.deleteTask(taskId)),
               );
               setTasks((prev) =>
-                prev.filter((task) => !selectedTaskIds.includes(task.id)),
+                prev
+                  .filter((task) => !selectedTaskIds.includes(task.id))
+                  .sort(sortTasks),
               );
               clearTaskSelection();
             } catch (error) {
@@ -193,7 +214,9 @@ const TasksScreen = () => {
           onPress: async () => {
             try {
               await taskService.deleteCompletedTasks();
-              setTasks((prev) => prev.filter((t) => !t.completed));
+              setTasks((prev) =>
+                prev.filter((t) => !t.completed).sort(sortTasks),
+              );
             } catch (error) {
               console.error("Error clearing completed tasks:", error);
             }
@@ -205,18 +228,22 @@ const TasksScreen = () => {
 
   const handleModalSave = async (
     text: string,
-    options: { reminder: boolean; reminderAt: number | null; groupId?: string },
+    options: {
+      reminder: boolean;
+      reminderAt: number | null;
+      groupId?: string;
+      priority: "low" | "medium" | "high";
+    },
   ) => {
     try {
       const newTask = await taskService.createTask(text, {
         reminder: options.reminder,
         reminderAt: options.reminderAt ?? undefined,
         groupId: options.groupId,
+        priority: options.priority,
       });
       setShowAddTaskModal(false);
-      setTasks((prev) =>
-        [newTask, ...prev].sort((a, b) => b.createdAt - a.createdAt),
-      );
+      setTasks((prev) => [newTask, ...prev].sort(sortTasks));
     } catch (error) {
       console.error("Error creating task:", error);
     }
@@ -249,7 +276,7 @@ const TasksScreen = () => {
           <Text style={styles.subtitle}>
             {isGuest
               ? "Your tasks are saved on this device."
-              : "Let's get things done today."}
+              : "Let\'s get things done today."}
           </Text>
         </View>
         <View style={styles.headerActions}>

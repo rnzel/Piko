@@ -213,20 +213,10 @@ const GroupsScreen = () => {
         <Text style={styles.headerTitle}>Groups</Text>
         <View style={styles.headerActions}>
           <TouchableOpacity
-            style={styles.headerAction}
+            style={styles.headerJoinButton}
             onPress={() => setShowJoinModal(true)}
           >
-            <Ionicons
-              name="enter-outline"
-              size={20}
-              color={Colors.light.text}
-            />
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.headerAction}
-            onPress={() => setShowCreateModal(true)}
-          >
-            <Ionicons name="add" size={24} color={Colors.light.text} />
+            <Text style={styles.headerJoinButtonText}>Join Group</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -260,6 +250,14 @@ const GroupsScreen = () => {
           ))
         )}
       </ScrollView>
+
+      <TouchableOpacity
+        onPress={() => setShowCreateModal(true)}
+        style={[styles.floatingAddButton, { bottom: insets.bottom + 96 }]}
+        activeOpacity={0.85}
+      >
+        <Ionicons name="add" size={28} color="#FFFFFF" />
+      </TouchableOpacity>
 
       {/* Create Group Modal */}
       <GroupModal

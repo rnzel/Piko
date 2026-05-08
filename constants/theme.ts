@@ -32,6 +32,14 @@ export const Colors = {
     warning: "#FFA726",
     info: "#42A5F5",
 
+    // Priorities
+    priorityHighBackground: "#FEECEC",
+    priorityHighText: "#C94A4A",
+    priorityMediumBackground: "#FFF4E5",
+    priorityMediumText: "#C27A1A",
+    priorityLowBackground: "#EEF3F8",
+    priorityLowText: "#5E748C",
+
     // Icons
     icon: "#687076",
     iconDefault: "#888888",

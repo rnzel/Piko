@@ -1,7 +1,8 @@
 import { taskStorage } from "@/services/storageService";
-import { syncFacade } from "@/services/syncFacade";
+import { syncOrchestrator } from "@/services/SyncOrchestrator";
 import { Task } from "@/types";
 import { generateId } from "@/utils/ids";
+import { normalizeTask } from "@/utils/normalizeTask";
 
 // Task service with sync support
 export const taskService = {
@@ -28,9 +29,14 @@ export const taskService = {
   // Create new task
   async createTask(
     text: string,
-    options?: { groupId?: string; reminder?: boolean; reminderAt?: number },
+    options?: {
+      groupId?: string;
+      reminder?: boolean;
+      reminderAt?: number;
+      priority?: "low" | "medium" | "high";
+    },
   ): Promise<Task> {
-    const newTask: Task = {
+    const newTask = normalizeTask({
       id: generateId(),
       text,
       completed: false,
@@ -39,9 +45,11 @@ export const taskService = {
       reminderAt: options?.reminderAt,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-    };
+      priority: options?.priority,
+      syncStatus: "local",
+    });
 
-    await syncFacade.addTask(newTask);
+    await syncOrchestrator.addTask(newTask);
     // Schedule reminder if set
     if (newTask.reminder && newTask.reminderAt) {
       try {
@@ -50,6 +58,7 @@ export const taskService = {
         await notificationService.scheduleReminder(
           newTask.id,
           newTask.reminderAt,
+          newTask.text,
         );
       } catch (e) {
         console.error("Failed to schedule reminder:", e);
@@ -68,7 +77,7 @@ export const taskService = {
         completed: !task.completed,
         updatedAt: Date.now(),
       };
-      await syncFacade.updateTask(updatedTask);
+      await syncOrchestrator.updateTask(updatedTask);
       // Cancel reminder if marking completed
       if (updatedTask.completed && updatedTask.reminder) {
         try {
@@ -92,12 +101,12 @@ export const taskService = {
     const tasks = await this.getTasks();
     const task = tasks.find((t) => t.id === taskId);
     if (task) {
-      const updatedTask: Task = {
+      const updatedTask = normalizeTask({
         ...task,
         ...updates,
         updatedAt: Date.now(),
-      };
-      await syncFacade.updateTask(updatedTask);
+      });
+      await syncOrchestrator.updateTask(updatedTask);
       return updatedTask;
     }
     return null;
@@ -113,14 +122,14 @@ export const taskService = {
     } catch (e) {
       // ignore
     }
-    await syncFacade.deleteTask(taskId);
+    await syncOrchestrator.deleteTask(taskId);
   },
 
   // Delete completed tasks
   async deleteCompletedTasks(): Promise<void> {
     const tasks = await this.getTasks();
     const pendingTasks = tasks.filter((t) => !t.completed);
-    await syncFacade.saveTasks(pendingTasks);
+    await syncOrchestrator.saveTasks(pendingTasks);
   },
 
   // Get task by ID
@@ -149,7 +158,7 @@ export const taskService = {
 
   // Clear all tasks
   async clearAllTasks(): Promise<void> {
-    await syncFacade.saveTasks([]);
+    await syncOrchestrator.saveTasks([]);
   },
 };
 

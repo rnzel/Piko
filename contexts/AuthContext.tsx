@@ -4,8 +4,8 @@ import {
   guestStorage,
   userStorage,
 } from "@/services/storageService";
-import { syncFacade } from "@/services/syncFacade";
-import { AuthState, UserProfile } from "@/types";
+import { syncOrchestrator } from "@/services/SyncOrchestrator";
+import { AuthState, SyncState, UserProfile } from "@/types";
 import {
   signOut as firebaseSignOut,
   getAuth,
@@ -27,6 +27,14 @@ import React, {
 } from "react";
 import { Alert } from "react-native";
 
+import MigrationModal from "@/components/tasks/MigrationModal";
+import {
+  detectGuestData,
+  GuestDataInfo,
+  migrateGuestData,
+  MigrationStrategy,
+} from "@/services/migrationService";
+
 const SIGN_IN_TIMEOUT_MS = 20000;
 
 const AuthContext = createContext<AuthState>({
@@ -36,6 +44,7 @@ const AuthContext = createContext<AuthState>({
   signIn: async () => {},
   signOut: async () => {},
   continueAsGuest: () => {},
+  syncState: SyncState.IDLE,
 });
 
 interface AuthProviderProps {
@@ -46,20 +55,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState>(SyncState.IDLE);
+
+  // Migration state
+  const [showMigration, setShowMigration] = useState(false);
+  const [migrationInfo, setMigrationInfo] = useState<GuestDataInfo | null>(
+    null,
+  );
+  const [migrationLoading, setMigrationLoading] = useState(false);
+
+  // Subscribe to orchestrator state changes
+  useEffect(() => {
+    const unsubscribe = syncOrchestrator.subscribe((state) => {
+      // Map orchestrator state to SyncState
+      const syncState = syncOrchestrator.syncState;
+      setSyncState(syncState);
+      console.log(
+        `[AuthContext] SyncOrchestrator state changed to: ${SyncState[syncState]}`,
+      );
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const signIn = useCallback(async () => {
-    console.log("Starting sign in process...");
+    console.log("[AuthContext] Starting sign-in process...");
+    setSyncState(SyncState.AUTHENTICATING);
     try {
-      // Force account picker
       await GoogleSignin.signOut();
 
-      // Check if your device supports Google Play
       await GoogleSignin.hasPlayServices({
         showPlayServicesUpdateDialog: true,
       });
-      console.log("Play services available");
+      console.log("[AuthContext] Google Play services available");
 
-      // Get the users ID token
       const signInResult = await Promise.race([
         GoogleSignin.signIn(),
         new Promise((_, reject) =>
@@ -74,39 +105,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           ),
         ),
       ]);
-      console.log("Google Sign-In successful", JSON.stringify(signInResult));
+      console.log("[AuthContext] Google Sign-In successful");
 
-      // Try the new style of google-sign in result, from v13+ of that module
-      // @ts-ignore - for compatibility between different versions of the library
       let idToken = (signInResult as { data?: { idToken?: string } }).data
         ?.idToken;
       if (!idToken) {
-        // if you are using older versions of google-signin, try old style result
-        // @ts-ignore - for older versions
         idToken = (signInResult as { idToken?: string }).idToken;
       }
       if (!idToken) {
         throw new Error("No ID token found");
       }
-      console.log("ID Token obtained");
 
-      // Create a Google credential with the token
       const googleCredential = GoogleAuthProvider.credential(idToken);
-      console.log("Firebase credential created");
-
-      // Sign-in the user with the credential
       const firebaseUserCredential = await signInWithCredential(
         getAuth(),
         googleCredential,
       );
-      console.log(
-        "Firebase sign in successful",
-        firebaseUserCredential.user.email,
-      );
 
-      // Save user profile
+      const uid = firebaseUserCredential.user.uid;
+      console.log(`[AuthContext] Firebase authenticated for uid: ${uid}`);
+
       const userProfile: UserProfile = {
-        uid: firebaseUserCredential.user.uid,
+        uid,
         email: firebaseUserCredential.user.email || "",
         displayName: firebaseUserCredential.user.displayName || "",
         photoURL: firebaseUserCredential.user.photoURL || undefined,
@@ -116,31 +136,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setUser(userProfile);
       setIsGuest(false);
 
-      // Initialize Firebase sync for the authenticated user
-      syncFacade.initialize(firebaseUserCredential.user.uid);
-      // Sync remote data down to local, then upload any local-only data
-      try {
-        await syncFacade.syncDown();
-      } catch (syncError) {
-        console.warn(
-          "[AuthContext] initial syncDown failed, will retry",
-          syncError,
-        );
+      // Migration check should happen before any sync orchestrator initialization
+      setSyncState(SyncState.MIGRATING);
+      console.log("[AuthContext] Detecting guest data for migration...");
+      const guestData = await detectGuestData();
+      if (guestData.hasTasks || guestData.hasGroups) {
+        setMigrationInfo(guestData);
+        setShowMigration(true);
+        // Migration modal will handle the next steps in handleMigrationChoice
+        return;
       }
-      try {
-        const localTasks = await (
-          await import("@/services/storageService")
-        ).taskStorage.getTasks();
-        const localGroups = await (
-          await import("@/services/storageService")
-        ).groupStorage.getGroups();
-        if (localTasks.length > 0 || localGroups.length > 0) {
-          await syncFacade.uploadLocalData();
-        }
-      } catch (uploadError) {
-        console.warn("[AuthContext] uploadLocalData failed", uploadError);
-      }
+
+      // No guest data, proceed with normal sync initialization
+      await initializeSync(uid);
     } catch (error) {
+      console.error("[AuthContext] Sign-in process error:", error);
+      setSyncState(SyncState.IDLE); // Reset sync state on error
+
       const errorCode =
         typeof error === "object" &&
         error !== null &&
@@ -182,56 +194,122 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         );
       }
     }
+  }, [setSyncState]);
+
+  const initializeSync = useCallback(async (uid: string) => {
+    console.log(`[AuthContext] Initializing sync for uid: ${uid}`);
+    // Delegate all sync initialization to the orchestrator
+    await syncOrchestrator.initialize(uid);
+    console.log(`[AuthContext] Sync initialization complete.`);
   }, []);
 
+  const handleMigrationChoice = useCallback(
+    async (strategy: MigrationStrategy) => {
+      const uid = getAuth().currentUser?.uid;
+      if (!uid) {
+        console.error("[AuthContext] No UID available for migration.");
+        return;
+      }
+
+      if (strategy === "cancel") {
+        console.log("[AuthContext] Migration cancelled. Signing out.");
+        setShowMigration(false);
+        setMigrationInfo(null);
+        setSyncState(SyncState.IDLE);
+        try {
+          await syncOrchestrator.deinitialize();
+          await firebaseSignOut(getAuth());
+          await GoogleSignin.signOut();
+        } catch (e) {
+          console.error("Error signing out after migration cancel:", e);
+        }
+        setUser(null);
+        setIsGuest(true);
+        return;
+      }
+
+      setMigrationLoading(true);
+      setSyncState(SyncState.MIGRATING);
+      console.log("[AuthContext] Starting guest data migration...");
+
+      try {
+        await migrateGuestData(uid, strategy);
+        setShowMigration(false);
+        setMigrationInfo(null);
+        console.log("[AuthContext] Guest data migration complete.");
+
+        // After migration, proceed with the normal sync initialization flow
+        await initializeSync(uid);
+      } catch (error) {
+        console.error("[AuthContext] Migration failed:", error);
+        setSyncState(SyncState.IDLE); // Reset sync state on error
+        Alert.alert(
+          "Migration Error",
+          "Failed to migrate your data. Please try signing in again.",
+        );
+      } finally {
+        setMigrationLoading(false);
+      }
+    },
+    [initializeSync, setSyncState],
+  );
+
   const signOut = useCallback(async () => {
+    console.log("[AuthContext] Signing out...");
+    setSyncState(SyncState.IDLE); // Reset sync state on sign out
     try {
-      syncFacade.deinitialize();
+      await syncOrchestrator.deinitialize();
       await firebaseSignOut(getAuth());
       await GoogleSignin.signOut();
       await clearAllStorage();
       setUser(null);
       setIsGuest(false);
+      console.log("[AuthContext] Sign out complete.");
     } catch (error) {
-      console.error("Error signing out:", error);
+      console.error("[AuthContext] Error signing out:", error);
       Alert.alert("Sign-out failed", "There was an error signing out.");
     }
-  }, []);
+  }, [setSyncState]);
 
   const continueAsGuest = useCallback(async () => {
+    console.log("[AuthContext] Continuing as guest...");
+    // Deinitialize orchestrator first to clear any previous authenticated state
+    await syncOrchestrator.deinitialize();
     await guestStorage.setIsGuest(true);
     setIsGuest(true);
     setLoading(false);
-  }, []);
+    setSyncState(SyncState.READY); // Guest mode is always READY locally
+  }, [setSyncState]);
 
   useEffect(() => {
-    // Request notification permissions once on startup
     notificationService
       .requestPermissions()
       .catch((e) =>
         console.warn("[AuthContext] notification permission request failed", e),
       );
 
-    // Configure Google Sign-In
     GoogleSignin.configure({
       webClientId:
         "1015788618693-28qa1mih7g9tec9fmfsfin36eb8g91kl.apps.googleusercontent.com",
     });
 
-    // Check initial auth state
     const initializeAuth = async () => {
       try {
-        // Check if user is marked as guest
+        console.log("[AuthContext] Initializing auth...");
         const savedIsGuest = await guestStorage.getIsGuest();
         if (savedIsGuest) {
+          console.log("[AuthContext] Guest session detected.");
           setIsGuest(true);
           setLoading(false);
+          setSyncState(SyncState.READY);
           return;
         }
 
-        // Check if user is logged in with Firebase
         const firebaseUser = getAuth().currentUser;
         if (firebaseUser) {
+          console.log(
+            "[AuthContext] Authenticated user detected on app start.",
+          );
           const userProfile: UserProfile = {
             uid: firebaseUser.uid,
             email: firebaseUser.email || "",
@@ -240,21 +318,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           };
           setUser(userProfile);
           setIsGuest(false);
+          await initializeSync(firebaseUser.uid);
         } else {
-          // No user logged in, show guest option
+          console.log(
+            "[AuthContext] No active user, setting guest mode (false).",
+          );
           setIsGuest(false);
+          setSyncState(SyncState.IDLE);
         }
       } catch (error) {
-        console.error("Error initializing auth:", error);
+        console.error("[AuthContext] Error initializing auth:", error);
         setIsGuest(false);
+        setSyncState(SyncState.IDLE);
       } finally {
         setLoading(false);
       }
     };
 
-    // Subscribe to auth state changes
-    const subscriber = onAuthStateChanged(getAuth(), (firebaseUser) => {
+    const subscriber = onAuthStateChanged(getAuth(), async (firebaseUser) => {
+      console.log("[AuthContext] onAuthStateChanged fired.");
       if (firebaseUser) {
+        console.log(
+          `[AuthContext] User signed in via onAuthStateChanged: ${firebaseUser.uid}`,
+        );
         const userProfile: UserProfile = {
           uid: firebaseUser.uid,
           email: firebaseUser.email || "",
@@ -263,10 +349,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
         setUser(userProfile);
         setIsGuest(false);
+        // If we are already mid-sync (e.g., from signIn flow), don't re-initialize.
+        // Otherwise, this is a fresh app start with an existing authenticated session.
+        if (
+          syncState === SyncState.IDLE ||
+          syncState === SyncState.AUTHENTICATING
+        ) {
+          await initializeSync(firebaseUser.uid);
+        } else {
+          console.log(
+            "[AuthContext] Sync already in progress, skipping re-initialization from onAuthStateChanged.",
+          );
+        }
       } else {
-        // Only clear user if not a guest
+        console.log(
+          "[AuthContext] User signed out or no user detected via onAuthStateChanged.",
+        );
         if (!isGuest) {
           setUser(null);
+          setSyncState(SyncState.IDLE);
         }
       }
       setLoading(false);
@@ -274,8 +375,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     initializeAuth();
 
-    return subscriber;
-  }, [isGuest]);
+    return () => {
+      console.log(
+        "[AuthContext] Cleaning up auth listener and sync orchestrator.",
+      );
+      subscriber();
+      syncOrchestrator.deinitialize(); // Ensure realtime listeners are unsubscribed
+    };
+  }, [isGuest, initializeSync, syncState]);
 
   return (
     <AuthContext.Provider
@@ -286,9 +393,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         signIn,
         signOut,
         continueAsGuest,
+        syncState,
       }}
     >
       {children}
+
+      <MigrationModal
+        visible={showMigration}
+        loading={migrationLoading}
+        taskCount={migrationInfo?.taskCount ?? 0}
+        groupCount={migrationInfo?.groupCount ?? 0}
+        onSelect={handleMigrationChoice}
+      />
     </AuthContext.Provider>
   );
 };

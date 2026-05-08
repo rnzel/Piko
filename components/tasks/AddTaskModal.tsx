@@ -28,7 +28,12 @@ type Props = {
   onClose: (force?: boolean) => void;
   onSave: (
     text: string,
-    options: { reminder: boolean; reminderAt: number | null; groupId?: string },
+    options: {
+      reminder: boolean;
+      reminderAt: number | null;
+      groupId?: string;
+      priority: "low" | "medium" | "high";
+    },
   ) => void;
   groups: Group[];
 };
@@ -55,6 +60,9 @@ const AddTaskModal = ({ visible, onClose, onSave, groups }: Props) => {
   const [showReminderDatePicker, setShowReminderDatePicker] = useState(false);
   const [showReminderTimePicker, setShowReminderTimePicker] = useState(false);
   const [selectedGroupId, setSelectedGroupId] = useState<string>("personal");
+  const [selectedPriority, setSelectedPriority] = useState<
+    "low" | "medium" | "high"
+  >("medium");
   const [showGroupPicker, setShowGroupPicker] = useState(false);
 
   const trimmedTaskText = newTaskText.trim();
@@ -76,6 +84,7 @@ const AddTaskModal = ({ visible, onClose, onSave, groups }: Props) => {
       setShowReminderDatePicker(false);
       setShowReminderTimePicker(false);
       setSelectedGroupId("personal");
+      setSelectedPriority("medium");
       setShowGroupPicker(false);
     }
   }, [visible]);
@@ -164,8 +173,50 @@ const AddTaskModal = ({ visible, onClose, onSave, groups }: Props) => {
       reminder: newTaskReminder,
       reminderAt: newTaskReminderAt?.getTime() ?? null,
       groupId: selectedGroupId === "personal" ? undefined : selectedGroupId,
+      priority: selectedPriority,
     });
     handleClose(true);
+  };
+
+  const getPriorityButtonStyles = (
+    priorityOption: "low" | "medium" | "high",
+    isSelected: boolean,
+  ) => {
+    let buttonStyle = { ...styles.modalPriorityButton };
+    let textStyle = { ...styles.modalPriorityButtonText };
+
+    if (isSelected) {
+      switch (priorityOption) {
+        case "low":
+          buttonStyle = {
+            ...buttonStyle,
+            backgroundColor: Colors.light.priorityLowBackground,
+            borderColor: Colors.light.priorityLowText,
+            borderWidth: 1,
+          };
+          textStyle = { ...textStyle, color: Colors.light.priorityLowText };
+          break;
+        case "medium":
+          buttonStyle = {
+            ...buttonStyle,
+            backgroundColor: Colors.light.priorityMediumBackground,
+            borderColor: Colors.light.priorityMediumText,
+            borderWidth: 1,
+          };
+          textStyle = { ...textStyle, color: Colors.light.priorityMediumText };
+          break;
+        case "high":
+          buttonStyle = {
+            ...buttonStyle,
+            backgroundColor: Colors.light.priorityHighBackground,
+            borderColor: Colors.light.priorityHighText,
+            borderWidth: 1,
+          };
+          textStyle = { ...textStyle, color: Colors.light.priorityHighText };
+          break;
+      }
+    }
+    return { buttonStyle, textStyle };
   };
 
   return (
@@ -253,6 +304,28 @@ const AddTaskModal = ({ visible, onClose, onSave, groups }: Props) => {
                   color={Colors.light.textSecondary}
                 />
               </TouchableOpacity>
+
+              <View style={styles.modalPriorityRow}>
+                {(["low", "medium", "high"] as const).map((priorityOption) => {
+                  const isSelected = selectedPriority === priorityOption;
+                  const { buttonStyle, textStyle } = getPriorityButtonStyles(
+                    priorityOption,
+                    isSelected,
+                  );
+                  return (
+                    <TouchableOpacity
+                      key={priorityOption}
+                      style={buttonStyle}
+                      onPress={() => setSelectedPriority(priorityOption)}
+                    >
+                      <Text style={textStyle}>
+                        {priorityOption.charAt(0).toUpperCase() +
+                          priorityOption.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
               <View style={styles.modalActionRow}>
                 <TouchableOpacity
@@ -473,6 +546,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     backgroundColor: Colors.light.tintLight,
     marginBottom: 8,
+  },
+  modalPriorityRow: {
+    flexDirection: "row",
+    justifyContent: "space-around",
+    marginBottom: 12,
+  },
+  modalPriorityButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    backgroundColor: Colors.light.card,
+  },
+  modalPriorityButtonText: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: Colors.light.textSecondary,
   },
   modalGroupButtonLeft: {
     flexDirection: "row",

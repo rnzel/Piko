@@ -2,11 +2,11 @@ import { Colors } from "@/constants/theme";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import React from "react";
 import {
-    Dimensions,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Dimensions,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 const { width } = Dimensions.get("window");
@@ -82,7 +82,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.tint,
     paddingVertical: 14,
     paddingHorizontal: 24,
-    borderRadius: 16,
+    borderRadius: 50,
     width: width * 0.8,
     marginBottom: 12,
   },
@@ -95,6 +95,7 @@ const styles = StyleSheet.create({
   guestButton: {
     backgroundColor: "transparent",
     borderWidth: 1.5,
+    borderRadius: 50,
     borderColor: Colors.light.border,
   },
   guestButtonText: {

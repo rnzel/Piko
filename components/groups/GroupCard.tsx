@@ -18,7 +18,7 @@ const GroupCard = ({ group, onPress, onLongPress, onCopyCode }: Props) => {
       activeOpacity={0.7}
       onPress={() => onPress(group)}
       onLongPress={() => onLongPress(group)}
-      accessibilityLabel={`${group.name} group, ${group.members.length} members`}
+      accessibilityLabel={`${group.name} group, ${group.memberCount || 0} members`}
       accessibilityRole="button"
     >
       <View style={styles.header}>
@@ -30,8 +30,8 @@ const GroupCard = ({ group, onPress, onLongPress, onCopyCode }: Props) => {
             {group.name}
           </Text>
           <Text style={styles.meta}>
-            {group.members.length} member
-            {group.members.length !== 1 ? "s" : ""} &bull; Code:{" "}
+            {group.memberCount || 0} member
+            {(group.memberCount || 0) !== 1 ? "s" : ""} &bull; Code:{" "}
             <Text style={styles.code} onPress={() => onCopyCode(group.code)}>
               {group.code}
             </Text>
@@ -52,21 +52,13 @@ const GroupCard = ({ group, onPress, onLongPress, onCopyCode }: Props) => {
       </View>
 
       <View style={styles.membersPreview}>
-        {group.members.slice(0, 5).map((member, index) => (
-          <View
-            key={index}
-            style={[styles.memberAvatar, { zIndex: 10 - index }]}
-          >
-            <Ionicons name="person" size={14} color="#FFFFFF" />
-          </View>
-        ))}
-        {group.members.length > 5 && (
-          <View style={styles.moreMembersBadge}>
-            <Text style={styles.moreMembersText}>
-              +{group.members.length - 5}
-            </Text>
-          </View>
-        )}
+        <View style={[styles.memberAvatar, { zIndex: 10 }]}>
+          <Ionicons name="people" size={14} color="#FFFFFF" />
+        </View>
+        <Text style={styles.memberCountText}>
+          {group.memberCount || 1} member
+          {(group.memberCount || 1) !== 1 ? "s" : ""}
+        </Text>
       </View>
     </TouchableOpacity>
   );
@@ -128,25 +120,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.light.tint,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: -10,
+    marginRight: 10,
     borderWidth: 2,
     borderColor: "#FFFFFF",
   },
-  moreMembersBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.light.card,
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 14,
-    borderWidth: 1,
-    borderColor: Colors.light.border,
-  },
-  moreMembersText: {
-    fontSize: 11,
-    fontWeight: "700",
+  memberCountText: {
+    fontSize: 13,
     color: Colors.light.textSecondary,
+    fontWeight: "500",
   },
 });
 

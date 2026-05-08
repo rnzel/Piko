@@ -33,8 +33,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   headerTitle: {
-    fontSize: 32,
-    fontWeight: "800",
+    fontSize: 28,
+    fontWeight: "bold",
     color: Colors.light.text,
     letterSpacing: -0.5,
   },
@@ -51,6 +51,19 @@ const styles = StyleSheet.create({
     borderColor: Colors.light.border,
     alignItems: "center",
     justifyContent: "center",
+  },
+  headerJoinButton: {
+    backgroundColor: Colors.light.tint,
+    borderRadius: 50,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerJoinButtonText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "600",
   },
   groupsList: {
     flex: 1,
@@ -139,6 +152,16 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "600",
+  },
+  floatingAddButton: {
+    position: "absolute",
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: Colors.light.tint,
   },
 });
 
