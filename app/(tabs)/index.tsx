@@ -1,8 +1,6 @@
-import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
-import { groupService } from "@/services/groupService";
 import { taskService } from "@/services/taskService";
-import { Group, Task, TaskFilter } from "@/types";
+import { Task, TaskFilter } from "@/types";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useState } from "react";
@@ -13,7 +11,6 @@ import AddTaskModal from "@/components/tasks/AddTaskModal";
 import AuthScreen from "@/components/tasks/AuthScreen";
 import BottomActionBar from "@/components/tasks/BottomActionBar";
 import TaskItem from "@/components/tasks/TaskItem";
-import BottomSheet from "@/components/ui/BottomSheet";
 import EmptyState from "@/components/ui/EmptyState";
 import Loading from "@/components/ui/Loading";
 import styles from "./index.styles";
@@ -50,8 +47,6 @@ const TasksScreen = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState<boolean>(true);
   const [filter, setFilter] = useState<TaskFilter>("ongoing");
-  const [groups, setGroups] = useState<Group[]>([]);
-  const [loadingGroups, setLoadingGroups] = useState<boolean>(true);
   const [selectedFolderId, setSelectedFolderId] = useState<string>("all");
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
@@ -76,26 +71,12 @@ const TasksScreen = () => {
   useFocusEffect(
     useCallback(() => {
       loadTasks();
-      setLoadingGroups(true);
-      groupService
-        .getGroups()
-        .then((g) => setGroups(g))
-        .catch((error) => console.error("Error loading groups:", error))
-        .finally(() => setLoadingGroups(false));
     }, [loadTasks]),
   );
-
-  const selectedFolderName =
-    selectedFolderId === "all"
-      ? "All"
-      : selectedFolderId === "personal"
-        ? "Personal"
-        : groups.find((g) => g.id === selectedFolderId)?.name || "Personal";
 
   const folderOptions: { id: string; label: string }[] = [
     { id: "all", label: "All" },
     { id: "personal", label: "Personal" },
-    ...groups.map((g) => ({ id: g.id, label: g.name })),
   ];
 
   const filteredTasks = tasks.filter((task) => {
@@ -112,9 +93,7 @@ const TasksScreen = () => {
 
   const getTaskFolderLabel = (task: Task) => {
     if (!task.groupId) return "Personal";
-    return (
-      groups.find((group) => group.id === task.groupId)?.name ?? "Personal"
-    );
+    return "Personal";
   };
 
   const toggleTask = async (taskId: string) => {
@@ -175,9 +154,7 @@ const TasksScreen = () => {
           style: "destructive",
           onPress: async () => {
             try {
-              await Promise.all(
-                selectedTaskIds.map((taskId) => taskService.deleteTask(taskId)),
-              );
+              await taskService.deleteTasks(selectedTaskIds);
               setTasks((prev) =>
                 prev
                   .filter((task) => !selectedTaskIds.includes(task.id))
@@ -314,17 +291,6 @@ const TasksScreen = () => {
               </TouchableOpacity>
             ))}
           </ScrollView>
-
-          <TouchableOpacity
-            style={styles.folderDropdown}
-            onPress={() => setShowFolderPicker(true)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.folderDropdownText} numberOfLines={1}>
-              {selectedFolderName}
-            </Text>
-            <Ionicons name="chevron-down" size={16} color="#FFFFFF" />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -374,7 +340,6 @@ const TasksScreen = () => {
         visible={showAddTaskModal}
         onClose={handleCloseModal}
         onSave={handleModalSave}
-        groups={groups}
       />
 
       <TouchableOpacity
@@ -393,68 +358,6 @@ const TasksScreen = () => {
           insetsBottom={insets.bottom}
         />
       )}
-
-      <BottomSheet
-        visible={showFolderPicker}
-        onClose={() => setShowFolderPicker(false)}
-        title="Select folder"
-      >
-        {folderOptions.map((option) => {
-          const isSelected = selectedFolderId === option.id;
-          return (
-            <TouchableOpacity
-              key={option.id}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                paddingVertical: 14,
-                paddingHorizontal: 4,
-                borderBottomWidth: 1,
-                borderBottomColor: Colors.light.divider,
-              }}
-              onPress={() => {
-                setSelectedFolderId(option.id);
-                setShowFolderPicker(false);
-              }}
-            >
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
-              >
-                <Ionicons
-                  name={
-                    option.id === "all"
-                      ? "layers-outline"
-                      : option.id === "personal"
-                        ? "person-outline"
-                        : "folder-outline"
-                  }
-                  size={20}
-                  color={
-                    isSelected ? Colors.light.tint : Colors.light.textSecondary
-                  }
-                />
-                <Text
-                  style={{
-                    fontSize: 16,
-                    color: isSelected ? Colors.light.tint : Colors.light.text,
-                    fontWeight: isSelected ? "600" : "400",
-                  }}
-                >
-                  {option.label}
-                </Text>
-              </View>
-              {isSelected && (
-                <Ionicons
-                  name="checkmark"
-                  size={20}
-                  color={Colors.light.tint}
-                />
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </BottomSheet>
     </View>
   );
 };

@@ -2,29 +2,22 @@ import { Colors } from "@/constants/theme";
 import { MigrationStrategy } from "@/services/migrationService";
 import React from "react";
 import {
-    ActivityIndicator,
-    Modal,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Modal,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 type Props = {
   visible: boolean;
   loading: boolean;
   taskCount: number;
-  groupCount: number;
   onSelect: (strategy: MigrationStrategy) => void;
 };
 
-const MigrationModal = ({
-  visible,
-  loading,
-  taskCount,
-  groupCount,
-  onSelect,
-}: Props) => {
+const MigrationModal = ({ visible, loading, taskCount, onSelect }: Props) => {
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
@@ -42,9 +35,6 @@ const MigrationModal = ({
                 <Text style={styles.bold}>
                   {taskCount > 0 &&
                     `${taskCount} task${taskCount > 1 ? "s" : ""}`}
-                  {taskCount > 0 && groupCount > 0 ? " and " : ""}
-                  {groupCount > 0 &&
-                    `${groupCount} group${groupCount > 1 ? "s" : ""}`}
                 </Text>{" "}
                 created on this device while you were using guest mode. Would
                 you like to merge them with your account?

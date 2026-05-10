@@ -125,6 +125,21 @@ export const taskService = {
     await syncOrchestrator.deleteTask(taskId);
   },
 
+  // Delete multiple tasks (batch)
+  async deleteTasks(taskIds: string[]): Promise<void> {
+    // Cancel scheduled reminders if any
+    try {
+      const { notificationService } =
+        await import("@/services/notificationService");
+      await Promise.allSettled(
+        taskIds.map((id) => notificationService.cancelReminder(id)),
+      );
+    } catch (e) {
+      // ignore
+    }
+    await syncOrchestrator.deleteTasks(taskIds);
+  },
+
   // Delete completed tasks
   async deleteCompletedTasks(): Promise<void> {
     const tasks = await this.getTasks();
@@ -136,12 +151,6 @@ export const taskService = {
   async getTaskById(taskId: string): Promise<Task | null> {
     const tasks = await this.getTasks();
     return tasks.find((t) => t.id === taskId) || null;
-  },
-
-  // Get tasks by group
-  async getTasksByGroup(groupId: string): Promise<Task[]> {
-    const tasks = await this.getTasks();
-    return tasks.filter((t) => t.groupId === groupId);
   },
 
   // Get pending tasks count

@@ -1,8 +1,15 @@
 import { Colors } from "@/constants/theme";
+import { notificationService } from "@/services/notificationService";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import React from "react";
-import { Dimensions, StyleSheet, TouchableOpacity, View } from "react-native";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Dimensions,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
@@ -13,9 +20,33 @@ const CustomTabBar = ({
   navigation,
 }: BottomTabBarProps) => {
   const insets = useSafeAreaInsets();
+  const [unreadCount, setUnreadCount] = useState(0);
+  const prevIndexRef = useRef(state.index);
+
+  // Fetch unread count
+  const fetchUnread = useCallback(async () => {
+    const count = await notificationService.getUnreadCount();
+    setUnreadCount(count);
+  }, []);
+
+  // Poll every 10s and refresh when tab index changes
+  useEffect(() => {
+    fetchUnread();
+
+    if (prevIndexRef.current !== state.index) {
+      prevIndexRef.current = state.index;
+      fetchUnread();
+    }
+
+    const interval = setInterval(fetchUnread, 10000);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [fetchUnread, state.index]);
 
   // Only render intended bottom-nav routes
-  const visibleRouteNames = ["index", "groups", "notifications", "profile"];
+  const visibleRouteNames = ["index", "notifications", "profile"];
   const routes = state.routes.filter((route) =>
     visibleRouteNames.includes(route.name),
   );
@@ -65,8 +96,6 @@ const CustomTabBar = ({
             switch (routeName) {
               case "index":
                 return isFocused ? "checkbox" : "checkbox-outline";
-              case "groups":
-                return isFocused ? "people" : "people-outline";
               case "notifications":
                 return isFocused ? "notifications" : "notifications-outline";
               case "profile":
@@ -75,6 +104,8 @@ const CustomTabBar = ({
                 return "ellipse-outline";
             }
           };
+
+          const isNotificationTab = route.name === "notifications";
 
           return (
             <TouchableOpacity
@@ -95,6 +126,13 @@ const CustomTabBar = ({
                     isFocused ? Colors.light.tint : Colors.light.iconDefault
                   }
                 />
+                {isNotificationTab && unreadCount > 0 && (
+                  <View style={styles.badge}>
+                    <Text style={styles.badgeText}>
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </Text>
+                  </View>
+                )}
               </View>
             </TouchableOpacity>
           );
@@ -141,6 +179,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "transparent",
+    position: "relative",
+  },
+  badge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: Colors.light.error,
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 4,
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  badgeText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "bold",
   },
 });
 

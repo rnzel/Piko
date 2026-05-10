@@ -17,12 +17,6 @@ export default function TabLayout() {
           title: "Tasks",
         }}
       />
-      <Tabs.Screen
-        name="groups"
-        options={{
-          title: "Groups",
-        }}
-      />
       {/* Placeholder for the FAB in the middle, not a navigable tab */}
       <Tabs.Screen
         name="_empty"

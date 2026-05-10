@@ -406,7 +406,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         visible={showMigration}
         loading={migrationLoading}
         taskCount={migrationInfo?.taskCount ?? 0}
-        groupCount={migrationInfo?.groupCount ?? 0}
         onSelect={handleMigrationChoice}
       />
     </AuthContext.Provider>

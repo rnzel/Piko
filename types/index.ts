@@ -3,16 +3,20 @@ export interface Task {
   id: string;
   text: string;
   completed: boolean;
+  /** @deprecated Group collaboration removed. Kept for backward compat with stored data. */
   groupId?: string;
   reminder?: boolean;
   reminderAt?: number;
   createdAt: number;
   updatedAt: number;
-  // New fields for collaboration
+  /** @deprecated Group collaboration removed. Kept for backward compat. */
   completedAt?: number;
+  /** @deprecated Group collaboration removed. Kept for backward compat. */
   completedBy?: string;
-  createdBy?: string; // For group tasks — who created it
-  assignedTo?: string; // For task assignment
+  /** @deprecated Group collaboration removed. Kept for backward compat. */
+  createdBy?: string;
+  /** @deprecated Group collaboration removed. Kept for backward compat. */
+  assignedTo?: string;
   priority?: "low" | "medium" | "high";
   dueDate?: number;
   deleted?: boolean; // Soft delete flag
@@ -22,7 +26,8 @@ export interface Task {
   syncStatus?: "local" | "synced" | "conflict";
 }
 
-// Group types
+// Group types — deprecated, kept for backward compatibility
+/** @deprecated Group collaboration has been removed. */
 export interface Group {
   id: string;
   name: string;
@@ -30,7 +35,6 @@ export interface Group {
   createdBy: string;
   createdAt: number;
   updatedAt: number;
-  // New fields
   description?: string;
   avatarURL?: string;
   memberCount: number;
@@ -38,13 +42,12 @@ export interface Group {
   isArchived?: boolean;
   lastActivityAt?: number;
   taskCount?: number;
-  // Sync metadata
   syncStatus?: "local" | "synced" | "pending";
   pendingChanges?: boolean;
   lastSyncedAt?: number;
 }
 
-// Group member (stored in /groups/{groupId}/members/{uid})
+/** @deprecated Group collaboration has been removed. */
 export interface GroupMember {
   uid: string;
   email: string;
@@ -58,7 +61,7 @@ export interface GroupMember {
   notificationsEnabled?: boolean;
 }
 
-// Denormalized membership (stored in /users/{uid}/memberships/{groupId})
+/** @deprecated Group collaboration has been removed. */
 export interface Membership {
   groupId: string;
   groupName: string;
@@ -67,7 +70,6 @@ export interface Membership {
   joinedAt: number;
   lastViewedAt?: number;
   unreadCount?: number;
-  // Sync safety metadata
   updatedAt?: number;
   lastSyncedAt?: number;
   membershipVersion?: number;
@@ -75,7 +77,7 @@ export interface Membership {
   pendingChanges?: boolean;
 }
 
-// Invitation
+/** @deprecated Group collaboration has been removed. */
 export interface Invitation {
   id: string;
   groupId: string;
@@ -99,19 +101,16 @@ export interface Invitation {
 // Notification
 export interface AppNotification {
   id: string;
-  type:
-    | "task_reminder"
-    | "group_invite"
-    | "member_joined"
-    | "task_assigned"
-    | "task_completed_by_other"
-    | "mention";
+  type: "task_reminder";
   title: string;
   body: string;
   data: {
+    /** @deprecated Group collaboration removed. */
     groupId?: string;
     taskId?: string;
+    /** @deprecated Group collaboration removed. */
     invitationId?: string;
+    /** @deprecated Group collaboration removed. */
     screen?: string;
   };
   read: boolean;
@@ -119,19 +118,10 @@ export interface AppNotification {
   createdAt: number;
 }
 
-// Activity log
+/** @deprecated Group collaboration has been removed. */
 export interface ActivityLog {
   id: string;
-  type:
-    | "task_created"
-    | "task_completed"
-    | "task_updated"
-    | "member_joined"
-    | "member_left"
-    | "member_removed"
-    | "group_updated"
-    | "task_assigned"
-    | "task_unassigned";
+  type: string;
   actorUid: string;
   actorName: string;
   targetId?: string;
@@ -172,13 +162,14 @@ export enum SyncState {
 // Task service types
 export type TaskFilter = "ongoing" | "completed";
 
-// Group service types
+/** @deprecated Group collaboration has been removed. */
 export interface CreateGroupResult {
   success: boolean;
   group?: Group;
   error?: string;
 }
 
+/** @deprecated Group collaboration has been removed. */
 export interface JoinGroupResult {
   success: boolean;
   group?: Group;
@@ -192,5 +183,5 @@ export interface JoinGroupResult {
   error?: string;
 }
 
-// Role types
+/** @deprecated Group collaboration has been removed. */
 export type GroupRole = "member" | "admin" | "owner";

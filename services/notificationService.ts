@@ -1,3 +1,5 @@
+import { notificationStorage } from "@/services/storageService";
+import { AppNotification } from "@/types";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Notifications from "expo-notifications";
 
@@ -5,6 +7,7 @@ import * as Notifications from "expo-notifications";
  * Notification service using expo-notifications for local reminders.
  * - Schedules notifications and stores mapping taskId -> scheduledId in AsyncStorage.
  * - Cancels scheduled notifications and cleans up mapping.
+ * - Creates and persists in-app AppNotification records for the notification screen.
  *
  * This keeps a lightweight, non-breaking integration for local reminders.
  */
@@ -31,12 +34,16 @@ async function saveMap(map: NotificationMap): Promise<void> {
   }
 }
 
+/** Generate a unique id for local AppNotification records */
+function generateNotificationId(): string {
+  return `notif_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
+
 export const notificationService = {
   // Request permissions for notifications (returns granted boolean)
   async requestPermissions(): Promise<boolean> {
     try {
       const permissions = await Notifications.requestPermissionsAsync();
-      // NotificationPermissionsStatus extends PermissionResponse, which has `status`.
       const granted =
         (permissions as { status?: string }).status === "granted" ||
         (permissions as { status?: string }).status === "provisional";
@@ -51,7 +58,54 @@ export const notificationService = {
     }
   },
 
+  // Get all in-app notification records
+  async getNotifications(): Promise<AppNotification[]> {
+    return await notificationStorage.getNotifications();
+  },
+
+  // Get unread notification count
+  async getUnreadCount(): Promise<number> {
+    return await notificationStorage.getUnreadCount();
+  },
+
+  // Mark a notification as read
+  async markAsRead(notificationId: string): Promise<void> {
+    await notificationStorage.markAsRead(notificationId);
+  },
+
+  // Mark all notifications as read
+  async markAllAsRead(): Promise<void> {
+    await notificationStorage.markAllAsRead();
+  },
+
+  // Delete a notification
+  async deleteNotification(notificationId: string): Promise<void> {
+    await notificationStorage.deleteNotification(notificationId);
+  },
+
+  // Create an in-app AppNotification record
+  async createAppNotification(
+    taskId: string,
+    title: string,
+    body: string,
+  ): Promise<void> {
+    const notification: AppNotification = {
+      id: generateNotificationId(),
+      type: "task_reminder",
+      title,
+      body,
+      data: { taskId },
+      read: false,
+      createdAt: Date.now(),
+    };
+    await notificationStorage.addNotification(notification);
+    console.log(
+      `[notificationService] created in-app notification id=${notification.id} for task=${taskId}`,
+    );
+  },
+
   // Schedule a local reminder for a task id at a unix timestamp (ms)
+  // Also creates a persistent in-app notification record.
   async scheduleReminder(
     taskId: string,
     timestamp: number,
@@ -80,6 +134,13 @@ export const notificationService = {
 
       console.log(
         `[notificationService] scheduled reminder for task=${taskId} id=${scheduledId} at=${triggerDate.toISOString()}`,
+      );
+
+      // Create in-app notification record
+      await this.createAppNotification(
+        taskId,
+        "Task Reminder",
+        `Reminder set for: ${taskText || "a task"}`,
       );
     } catch (e) {
       console.error("[notificationService] scheduleReminder error", e);

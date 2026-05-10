@@ -138,33 +138,45 @@ const TaskItem = ({
             </View>
           )}
 
-          {task.reminderAt && (
-            <View
-              style={{
-                backgroundColor: Colors.light.tintLight,
-                borderColor: Colors.light.tint,
-                borderWidth: 1,
-                borderRadius: 999,
-                paddingVertical: 6,
-                paddingHorizontal: 10,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 4,
-              }}
-            >
-              <Ionicons
-                name="alarm-outline"
-                size={12}
-                color={Colors.light.tint}
-              />
-              <Text
-                style={{ color: Colors.light.tint, fontSize: 12 }}
-                numberOfLines={1}
-              >
-                {formatReminderDateTime(new Date(task.reminderAt))}
-              </Text>
-            </View>
-          )}
+          {task.reminderAt &&
+            (() => {
+              const now = Date.now();
+              const isOverdue = task.completed || task.reminderAt < now;
+              return (
+                <View
+                  style={{
+                    backgroundColor: isOverdue
+                      ? "rgba(239, 83, 80, 0.1)"
+                      : Colors.light.tintLight,
+                    borderColor: isOverdue
+                      ? Colors.light.error
+                      : Colors.light.tint,
+                    borderWidth: 1,
+                    borderRadius: 999,
+                    paddingVertical: 6,
+                    paddingHorizontal: 10,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <Ionicons
+                    name={isOverdue ? "alarm" : "alarm-outline"}
+                    size={12}
+                    color={isOverdue ? Colors.light.error : Colors.light.tint}
+                  />
+                  <Text
+                    style={{
+                      color: isOverdue ? Colors.light.error : Colors.light.tint,
+                      fontSize: 12,
+                    }}
+                    numberOfLines={1}
+                  >
+                    {formatReminderDateTime(new Date(task.reminderAt))}
+                  </Text>
+                </View>
+              );
+            })()}
         </View>
       </View>
     </TouchableOpacity>

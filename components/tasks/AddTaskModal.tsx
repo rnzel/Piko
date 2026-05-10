@@ -1,5 +1,4 @@
 import { Colors } from "@/constants/theme";
-import { Group } from "@/types";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import DateTimePicker, {
   DateTimePickerEvent,
@@ -29,7 +28,6 @@ type Props = {
       priority: "low" | "medium" | "high";
     },
   ) => void;
-  groups: Group[];
 };
 
 const MIN_TASK_LENGTH = 3;
@@ -45,18 +43,16 @@ const formatReminderDateTime = (date: Date) => {
   });
 };
 
-const AddTaskModal = ({ visible, onClose, onSave, groups }: Props) => {
+const AddTaskModal = ({ visible, onClose, onSave }: Props) => {
   const inputRef = useRef<TextInput>(null);
   const [newTaskText, setNewTaskText] = useState("");
   const [newTaskReminder, setNewTaskReminder] = useState(false);
   const [newTaskReminderAt, setNewTaskReminderAt] = useState<Date | null>(null);
   const [showReminderDatePicker, setShowReminderDatePicker] = useState(false);
   const [showReminderTimePicker, setShowReminderTimePicker] = useState(false);
-  const [selectedGroupId, setSelectedGroupId] = useState<string>("personal");
   const [selectedPriority, setSelectedPriority] = useState<
     "low" | "medium" | "high"
   >("low");
-  const [showGroupPicker, setShowGroupPicker] = useState(false);
 
   const trimmedTaskText = newTaskText.trim();
   const isTaskLengthValid =
@@ -74,21 +70,9 @@ const AddTaskModal = ({ visible, onClose, onSave, groups }: Props) => {
       setNewTaskReminderAt(null);
       setShowReminderDatePicker(false);
       setShowReminderTimePicker(false);
-      setSelectedGroupId("personal");
       setSelectedPriority("low");
-      setShowGroupPicker(false);
     }
   }, [visible]);
-
-  const selectedGroupName =
-    selectedGroupId === "personal"
-      ? "Personal"
-      : groups.find((g) => g.id === selectedGroupId)?.name || "Personal";
-
-  const groupOptions: { id: string; label: string }[] = [
-    { id: "personal", label: "Personal" },
-    ...groups.map((g) => ({ id: g.id, label: g.name })),
-  ];
 
   const onReminderDateChange = (
     event: DateTimePickerEvent,
@@ -163,7 +147,7 @@ const AddTaskModal = ({ visible, onClose, onSave, groups }: Props) => {
     onSave(trimmedTaskText, {
       reminder: newTaskReminder,
       reminderAt: newTaskReminderAt?.getTime() ?? null,
-      groupId: selectedGroupId === "personal" ? undefined : selectedGroupId,
+      groupId: undefined,
       priority: selectedPriority,
     });
     handleClose(true);
@@ -234,28 +218,6 @@ const AddTaskModal = ({ visible, onClose, onSave, groups }: Props) => {
             {`${newTaskText.length}/${MAX_TASK_LENGTH}`}
           </Text>
         </View>
-
-        <TouchableOpacity
-          style={styles.modalGroupButton}
-          onPress={() => setShowGroupPicker(true)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.modalGroupButtonLeft}>
-            <Ionicons
-              name="folder-outline"
-              size={18}
-              color={Colors.light.tint}
-            />
-            <Text style={styles.modalGroupButtonText} numberOfLines={1}>
-              {selectedGroupName}
-            </Text>
-          </View>
-          <Ionicons
-            name="chevron-down"
-            size={16}
-            color={Colors.light.textSecondary}
-          />
-        </TouchableOpacity>
 
         <Text style={styles.modalLabel}>Priority</Text>
 
@@ -360,66 +322,6 @@ const AddTaskModal = ({ visible, onClose, onSave, groups }: Props) => {
           onChange={onReminderTimeChange}
         />
       )}
-
-      <BottomSheet
-        visible={showGroupPicker}
-        onClose={() => setShowGroupPicker(false)}
-        title="Select folder"
-      >
-        {groupOptions.map((option) => {
-          const isSelected = selectedGroupId === option.id;
-          return (
-            <TouchableOpacity
-              key={option.id}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-                paddingVertical: 14,
-                paddingHorizontal: 4,
-                borderBottomWidth: 1,
-                borderBottomColor: Colors.light.divider,
-              }}
-              onPress={() => {
-                setSelectedGroupId(option.id);
-                setShowGroupPicker(false);
-              }}
-            >
-              <View
-                style={{ flexDirection: "row", alignItems: "center", gap: 10 }}
-              >
-                <Ionicons
-                  name={
-                    option.id === "personal"
-                      ? "person-outline"
-                      : "folder-outline"
-                  }
-                  size={20}
-                  color={
-                    isSelected ? Colors.light.tint : Colors.light.textSecondary
-                  }
-                />
-                <Text
-                  style={{
-                    fontSize: 16,
-                    color: isSelected ? Colors.light.tint : Colors.light.text,
-                    fontWeight: isSelected ? "600" : "400",
-                  }}
-                >
-                  {option.label}
-                </Text>
-              </View>
-              {isSelected && (
-                <Ionicons
-                  name="checkmark"
-                  size={20}
-                  color={Colors.light.tint}
-                />
-              )}
-            </TouchableOpacity>
-          );
-        })}
-      </BottomSheet>
     </>
   );
 };
@@ -440,18 +342,6 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
     textAlign: "right",
     alignSelf: "flex-end",
-  },
-  modalGroupButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderWidth: 1,
-    borderColor: Colors.light.tint,
-    borderRadius: 50,
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    backgroundColor: Colors.light.tintLight,
-    marginBottom: 8,
   },
   modalLabel: {
     fontSize: 14,
@@ -478,17 +368,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "500",
     color: Colors.light.textSecondary,
-  },
-  modalGroupButtonLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    flex: 1,
-  },
-  modalGroupButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: Colors.light.tint,
   },
   modalActionRow: {
     marginTop: 12,

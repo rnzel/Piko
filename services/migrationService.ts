@@ -1,13 +1,7 @@
-import {
-  groupStorage,
-  guestScopedStorage,
-  membershipStorage,
-  taskStorage,
-  userScopedStorage,
-} from "@/services/storageService";
-import { Group, Task } from "@/types";
-import { mergeGroups } from "@/utils/mergeGroups";
-import { mergeTasks } from "@/utils/mergeTasks";
+import { taskStorage } from "@/services/storageService";
+import { syncOrchestrator } from "@/services/SyncOrchestrator";
+import { taskService } from "@/services/taskService";
+import { Task } from "@/types";
 
 export type MigrationStrategy = "merge" | "keepAccount" | "cancel";
 
@@ -18,138 +12,95 @@ export interface GuestDataInfo {
   groupCount: number;
 }
 
+/**
+ * Detects guest data that was created while using the app in guest mode.
+ * Only tasks are migrated — groups are no longer supported.
+ */
 export async function detectGuestData(): Promise<GuestDataInfo> {
-  const legacyTasks = await taskStorage.getTasks();
-  const legacyGroups = await groupStorage.getGroups();
-  const guestTasks = await guestScopedStorage.getTasks();
-  const guestGroups = await guestScopedStorage.getGroups();
-
-  const allTasks = legacyTasks.length > 0 || guestTasks.length > 0;
-  const allGroups = legacyGroups.length > 0 || guestGroups.length > 0;
-
+  const tasks = await loadGuestTasks();
   return {
-    hasTasks: allTasks,
-    hasGroups: allGroups,
-    taskCount: legacyTasks.length + guestTasks.length,
-    groupCount: legacyGroups.length + guestGroups.length,
+    hasTasks: tasks.length > 0,
+    hasGroups: false,
+    taskCount: tasks.length,
+    groupCount: 0,
   };
 }
 
+/**
+ * Loads guest tasks from the task storage adapter.
+ */
 async function loadGuestTasks(): Promise<Task[]> {
-  const legacy = await taskStorage.getTasks();
-  const scoped = await guestScopedStorage.getTasks();
-  const map = new Map<string, Task>();
-  for (const t of legacy) map.set(t.id, t);
-  for (const t of scoped) map.set(t.id, t);
-  return Array.from(map.values());
+  // Guest tasks are stored in the same local task storage.
+  return await taskStorage.getTasks();
 }
 
-async function loadGuestGroups(): Promise<Group[]> {
-  const legacy = await groupStorage.getGroups();
-  const scoped = await guestScopedStorage.getGroups();
-  const map = new Map<string, Group>();
-  for (const g of legacy) map.set(g.id, g);
-  for (const g of scoped) map.set(g.id, g);
-  return Array.from(map.values());
-}
-
+/**
+ * Clears all guest data after successful migration.
+ */
 async function clearGuestData(): Promise<void> {
+  // Only task data needs to be cleared now.
   await taskStorage.clearTasks();
-  await groupStorage.clearGroups();
-  await guestScopedStorage.clearAll();
 }
 
+/**
+ * Migrates guest data to the authenticated user's account.
+ *
+ * @param uid - The authenticated user's UID
+ * @param strategy - Migration strategy ("merge" or "keepAccount")
+ */
 export async function migrateGuestData(
   uid: string,
   strategy: MigrationStrategy,
-): Promise<boolean> {
-  if (strategy === "cancel") return false;
+): Promise<void> {
+  console.log(
+    `[migrationService] Starting migration with strategy: ${strategy}`,
+  );
 
-  try {
-    if (strategy === "merge") {
-      const guestTasks = await loadGuestTasks();
-      const guestGroups = await loadGuestGroups();
-      const userTasks = await userScopedStorage.getTasks(uid);
-      const userGroups = await userScopedStorage.getGroups(uid);
+  if (strategy === "keepAccount") {
+    // Discard guest data, keep account data as-is
+    console.log(
+      `[migrationService] Keeping account data only. Clearing guest data.`,
+    );
+    await clearGuestData();
+    return;
+  }
 
-      console.log(
-        `[migrationService] Merging guest tasks (${guestTasks.length}) with user tasks (${userTasks.length})`,
-      );
-      const mergedTasks = mergeTasks(guestTasks, userTasks).map((task) => ({
-        ...task,
-        updatedAt: Date.now(),
-      }));
-      console.log(
-        `[migrationService] Merged tasks count: ${mergedTasks.length}`,
-      );
+  // Strategy: "merge" — merge guest tasks into account
+  const guestTasks = await loadGuestTasks();
 
-      console.log(
-        `[migrationService] Merging guest groups (${guestGroups.length}) with user groups (${userGroups.length})`,
-      );
-      const mergedGroups = mergeGroups(guestGroups, userGroups).map(
-        (group) => ({ ...group, updatedAt: Date.now() }),
-      );
-      console.log(
-        `[migrationService] Merged groups count: ${mergedGroups.length}`,
-      );
+  if (guestTasks.length > 0) {
+    console.log(
+      `[migrationService] Migrating ${guestTasks.length} guest tasks.`,
+    );
 
-      // Save merged data to user-scoped storage
-      await userScopedStorage.saveTasks(uid, mergedTasks);
-      await userScopedStorage.saveGroups(uid, mergedGroups);
-      console.log(
-        "[migrationService] Merged data saved to user-scoped storage.",
-      );
+    // Merge guest tasks with existing account tasks
+    const existingTasks = await taskService.getTasks();
+    const existingIds = new Set(existingTasks.map((t) => t.id));
 
-      // Write to legacy storage for immediate app pickup
-      await taskStorage.saveTasks(mergedTasks);
-      await groupStorage.saveGroups(mergedGroups);
-      console.log(
-        "[migrationService] Merged data saved to legacy storage for immediate app pickup.",
-      );
+    const mergedTasks = [...existingTasks];
+    let addedCount = 0;
 
-      // Create memberships for merged groups
-      const memberships = mergedGroups.map((g) => ({
-        groupId: g.id,
-        groupName: g.name,
-        groupCode: g.code,
-        role: (g.createdBy === uid ? "owner" : "member") as "owner" | "member",
-        joinedAt: Date.now(),
-      }));
-      if (memberships.length > 0) {
-        await membershipStorage.saveMemberships(uid, memberships);
+    for (const task of guestTasks) {
+      if (!existingIds.has(task.id)) {
+        mergedTasks.push(task);
+        addedCount++;
       }
-
-      await clearGuestData();
-    } else if (strategy === "keepAccount") {
-      const userTasks = await userScopedStorage.getTasks(uid);
-      const userGroups = await userScopedStorage.getGroups(uid);
-
-      await taskStorage.saveTasks(userTasks);
-      await groupStorage.saveGroups(userGroups);
-
-      // Create memberships for kept groups
-      const memberships = userGroups.map((g) => ({
-        groupId: g.id,
-        groupName: g.name,
-        groupCode: g.code,
-        role: (g.createdBy === uid ? "owner" : "member") as "owner" | "member",
-        joinedAt: Date.now(),
-      }));
-      if (memberships.length > 0) {
-        await membershipStorage.saveMemberships(uid, memberships);
-      }
-
-      await clearGuestData();
     }
 
-    return true;
-  } catch (error) {
-    console.error("[migrationService] migration failed:", error);
-    throw error;
-  }
-}
+    // Save merged tasks locally first
+    await taskStorage.saveTasks(mergedTasks);
 
-export const migrationService = {
-  detectGuestData,
-  migrateGuestData,
-};
+    // Upload to Firestore via orchestrator
+    if (uid) {
+      await syncOrchestrator.saveTasks(mergedTasks);
+    }
+
+    console.log(
+      `[migrationService] Migration complete: added ${addedCount} guest tasks.`,
+    );
+  }
+
+  // Clear guest data after migration
+  await clearGuestData();
+  console.log(`[migrationService] Guest data cleared.`);
+}

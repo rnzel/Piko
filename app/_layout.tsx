@@ -35,6 +35,32 @@ export default function RootLayout() {
     notificationService.requestPermissions();
   }, []);
 
+  // Listen for notification taps (when user taps a notification from the system tray)
+  useEffect(() => {
+    const responseListener =
+      Notifications.addNotificationResponseReceivedListener(
+        async (response) => {
+          const taskId = response.notification.request.content.data?.taskId as
+            | string
+            | undefined;
+          if (taskId) {
+            // Mark the corresponding in-app notification as read
+            const notifications = await notificationService.getNotifications();
+            const matching = notifications.find(
+              (n) => n.data?.taskId === taskId,
+            );
+            if (matching) {
+              await notificationService.markAsRead(matching.id);
+            }
+          }
+        },
+      );
+
+    return () => {
+      responseListener.remove();
+    };
+  }, []);
+
   return (
     <AuthProvider>
       <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>

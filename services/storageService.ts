@@ -1,135 +1,62 @@
-import { Group, Membership, Task, UserProfile } from "@/types";
+import { AppNotification, Task, UserProfile } from "@/types";
 import { normalizeTask } from "@/utils/normalizeTask";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+// ────────────────────────────────────────────────────────────
+// Storage keys
+// ────────────────────────────────────────────────────────────
+
 const STORAGE_KEYS = {
   TASKS: "@piko_tasks",
-  GROUPS: "@piko_groups",
   USER: "@piko_user",
   IS_GUEST: "@piko_is_guest",
-  SCHEMA_VERSION: "@piko_schema_version",
-  GUEST_TASKS: "@piko_guest_tasks",
-  GUEST_GROUPS: "@piko_guest_groups",
-};
+  NOTIFICATIONS: "@piko_notifications",
+} as const;
 
-const userTasksKey = (uid: string) => `@piko_user_tasks_${uid}`;
-const userGroupsKey = (uid: string) => `@piko_user_groups_${uid}`;
-const userMembershipsKey = (uid: string) => `@piko_user_memberships_${uid}`;
+// ────────────────────────────────────────────────────────────
+// Storage versioning
+// ────────────────────────────────────────────────────────────
 
-const CURRENT_SCHEMA_VERSION = 3;
+const APP_STORAGE_VERSION_KEY = "@piko_storage_version";
+const CURRENT_STORAGE_VERSION = 2;
 
-// Schema migration runner
-const runMigrations = async (): Promise<void> => {
+async function checkAndMigrateStorage(): Promise<void> {
   try {
-    const storedVersion = await AsyncStorage.getItem(
-      STORAGE_KEYS.SCHEMA_VERSION,
-    );
-    const version = storedVersion ? parseInt(storedVersion, 10) : 0;
+    const versionStr = await AsyncStorage.getItem(APP_STORAGE_VERSION_KEY);
+    const version = versionStr ? parseInt(versionStr, 10) : 0;
 
-    if (version >= CURRENT_SCHEMA_VERSION) return;
-    if (isNaN(version)) return;
+    const migrations: Record<number, () => Promise<void>> = {
+      1: async () => {
+        // Migration v1 to v2: groups/memberships were handled at app level.
+        // No group migration needed anymore.
+      },
+    };
 
-    // Migration from v0 to v1: ensure timestamps are numbers
-    if (version < 1) {
-      const tasksJson = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
-      if (tasksJson) {
-        const tasks: Task[] = JSON.parse(tasksJson);
-        let changed = false;
-        const migrated = tasks.map((t) => {
-          if (typeof t.createdAt === "string") {
-            changed = true;
-            return {
-              ...t,
-              createdAt: new Date(t.createdAt).getTime(),
-              updatedAt: new Date(t.updatedAt).getTime(),
-            };
-          }
-          return t;
-        });
-        if (changed) {
-          await AsyncStorage.setItem(
-            STORAGE_KEYS.TASKS,
-            JSON.stringify(migrated),
-          );
-        }
-      }
-    }
-
-    // Migration v1 to v2: groups already migrated (handled at app level)
-    if (version < 2) {
-      // No automated migration needed — handled by groupService
-    }
-
-    // Migration v2 to v3: Normalize all tasks (ensure priority, stable schema)
-    if (version < 3) {
-      console.log("[storageService] migrating to v3: normalizing tasks...");
-      const tasksJson = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
-      if (tasksJson) {
-        const tasks: any[] = JSON.parse(tasksJson);
-        const migrated = tasks.map(normalizeTask);
-        await AsyncStorage.setItem(
-          STORAGE_KEYS.TASKS,
-          JSON.stringify(migrated),
-        );
-      }
-
-      // Also migrate user-scoped tasks if any
-      const keys = await AsyncStorage.getAllKeys();
-      const userTaskKeys = keys.filter((k) =>
-        k.startsWith("@piko_user_tasks_"),
-      );
-      for (const key of userTaskKeys) {
-        const json = await AsyncStorage.getItem(key);
-        if (json) {
-          const tasks: any[] = JSON.parse(json);
-          const migrated = tasks.map(normalizeTask);
-          await AsyncStorage.setItem(key, JSON.stringify(migrated));
-        }
-      }
-
-      // Also migrate guest-scoped tasks
-      const guestTasksJson = await AsyncStorage.getItem(
-        STORAGE_KEYS.GUEST_TASKS,
-      );
-      if (guestTasksJson) {
-        const tasks: any[] = JSON.parse(guestTasksJson);
-        const migrated = tasks.map(normalizeTask);
-        await AsyncStorage.setItem(
-          STORAGE_KEYS.GUEST_TASKS,
-          JSON.stringify(migrated),
-        );
+    for (let v = version; v < CURRENT_STORAGE_VERSION; v++) {
+      if (migrations[v]) {
+        await migrations[v]();
       }
     }
 
     await AsyncStorage.setItem(
-      STORAGE_KEYS.SCHEMA_VERSION,
-      String(CURRENT_SCHEMA_VERSION),
+      APP_STORAGE_VERSION_KEY,
+      String(CURRENT_STORAGE_VERSION),
     );
-    console.log(
-      `[storageService] schema migrated to v${CURRENT_SCHEMA_VERSION}`,
-    );
-  } catch (e) {
-    console.error("[storageService] migration error", e);
+  } catch (error) {
+    console.error("Storage migration failed:", error);
   }
-};
+}
 
-// Run migrations immediately on import
-runMigrations();
-
+// ────────────────────────────────────────────────────────────
 // Task storage operations
+// ────────────────────────────────────────────────────────────
+
 export const taskStorage = {
   async getTasks(): Promise<Task[]> {
     try {
-      console.log(
-        `[storageService] Reading tasks from key: ${STORAGE_KEYS.TASKS}`,
-      );
       const tasksJson = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
-      const tasks: any[] = tasksJson ? JSON.parse(tasksJson) : [];
-      const normalizedTasks = tasks.map(normalizeTask);
-      console.log(
-        `[storageService] Retrieved ${normalizedTasks.length} tasks.`,
-      );
-      return normalizedTasks;
+      const tasks = tasksJson ? JSON.parse(tasksJson) : [];
+      return tasks.map((t: any) => normalizeTask(t)).filter(Boolean) as Task[];
     } catch (error) {
       console.error("Error getting tasks:", error);
       return [];
@@ -138,10 +65,14 @@ export const taskStorage = {
 
   async saveTasks(tasks: Task[]): Promise<void> {
     try {
-      console.log(
-        `[storageService] Saving ${tasks.length} tasks to key: ${STORAGE_KEYS.TASKS}`,
+      const normalized = tasks.map((t) => ({
+        ...t,
+        updatedAt: t.updatedAt || Date.now(),
+      }));
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.TASKS,
+        JSON.stringify(normalized),
       );
-      await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(tasks));
     } catch (error) {
       console.error("Error saving tasks:", error);
     }
@@ -180,110 +111,30 @@ export const taskStorage = {
     }
   },
 
+  async deleteTasks(taskIds: string[]): Promise<void> {
+    try {
+      const tasks = await this.getTasks();
+      const idsSet = new Set(taskIds);
+      const filteredTasks = tasks.filter((t) => !idsSet.has(t.id));
+      await this.saveTasks(filteredTasks);
+    } catch (error) {
+      console.error("Error deleting tasks:", error);
+    }
+  },
+
   async clearTasks(): Promise<void> {
     try {
-      await AsyncStorage.removeItem(STORAGE_KEYS.TASKS);
+      await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify([]));
     } catch (error) {
       console.error("Error clearing tasks:", error);
     }
   },
 };
 
-// Group storage operations
-export const groupStorage = {
-  async getGroups(): Promise<Group[]> {
-    try {
-      console.log(
-        `[storageService] Reading groups from key: ${STORAGE_KEYS.GROUPS}`,
-      );
-      const groupsJson = await AsyncStorage.getItem(STORAGE_KEYS.GROUPS);
-      const groups = groupsJson ? JSON.parse(groupsJson) : [];
-      console.log(`[storageService] Retrieved ${groups.length} groups.`);
-      return groups;
-    } catch (error) {
-      console.error("Error getting groups:", error);
-      return [];
-    }
-  },
-
-  async saveGroups(groups: Group[]): Promise<void> {
-    try {
-      console.log(
-        `[storageService] Saving ${groups.length} groups to key: ${STORAGE_KEYS.GROUPS}`,
-      );
-      await AsyncStorage.setItem(STORAGE_KEYS.GROUPS, JSON.stringify(groups));
-    } catch (error) {
-      console.error("Error saving groups:", error);
-    }
-  },
-
-  async addGroup(group: Group): Promise<void> {
-    try {
-      const groups = await this.getGroups();
-      groups.push(group);
-      await this.saveGroups(groups);
-    } catch (error) {
-      console.error("Error adding group:", error);
-    }
-  },
-
-  async updateGroup(updatedGroup: Group): Promise<void> {
-    try {
-      const groups = await this.getGroups();
-      const index = groups.findIndex((g) => g.id === updatedGroup.id);
-      if (index !== -1) {
-        groups[index] = updatedGroup;
-        await this.saveGroups(groups);
-      }
-    } catch (error) {
-      console.error("Error updating group:", error);
-    }
-  },
-
-  async deleteGroup(groupId: string): Promise<void> {
-    try {
-      const groups = await this.getGroups();
-      const filteredGroups = groups.filter((g) => g.id !== groupId);
-      await this.saveGroups(filteredGroups);
-    } catch (error) {
-      console.error("Error deleting group:", error);
-    }
-  },
-
-  async clearGroups(): Promise<void> {
-    try {
-      await AsyncStorage.removeItem(STORAGE_KEYS.GROUPS);
-    } catch (error) {
-      console.error("Error clearing groups:", error);
-    }
-  },
-};
-
-// Membership storage (denormalized per-user memberships)
-export const membershipStorage = {
-  async getMemberships(uid: string): Promise<Membership[]> {
-    try {
-      const json = await AsyncStorage.getItem(userMembershipsKey(uid));
-      return json ? JSON.parse(json) : [];
-    } catch (error) {
-      console.error("Error getting memberships:", error);
-      return [];
-    }
-  },
-
-  async saveMemberships(uid: string, memberships: Membership[]): Promise<void> {
-    try {
-      await AsyncStorage.setItem(
-        userMembershipsKey(uid),
-        JSON.stringify(memberships),
-      );
-    } catch (error) {
-      console.error("Error saving memberships:", error);
-    }
-  },
-};
-
+// ────────────────────────────────────────────────────────────
 // User storage operations
+// ────────────────────────────────────────────────────────────
+
 export const userStorage = {
   async getUser(): Promise<UserProfile | null> {
     try {
@@ -312,14 +163,14 @@ export const userStorage = {
   },
 };
 
-// Guest mode operations
+// ────────────────────────────────────────────────────────────
+// Guest storage operations
+// ────────────────────────────────────────────────────────────
+
 export const guestStorage = {
   async setIsGuest(isGuest: boolean): Promise<void> {
     try {
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.IS_GUEST,
-        JSON.stringify(isGuest),
-      );
+      await AsyncStorage.setItem(STORAGE_KEYS.IS_GUEST, String(isGuest));
     } catch (error) {
       console.error("Error setting guest status:", error);
     }
@@ -327,8 +178,8 @@ export const guestStorage = {
 
   async getIsGuest(): Promise<boolean> {
     try {
-      const isGuestJson = await AsyncStorage.getItem(STORAGE_KEYS.IS_GUEST);
-      return isGuestJson ? JSON.parse(isGuestJson) : false;
+      const value = await AsyncStorage.getItem(STORAGE_KEYS.IS_GUEST);
+      return value === "true";
     } catch (error) {
       console.error("Error getting guest status:", error);
       return false;
@@ -344,117 +195,157 @@ export const guestStorage = {
   },
 };
 
-/**
- * User-scoped storage for authenticated users.
- * Keys are scoped by uid to prevent cross-user data leaks.
- */
-export const userScopedStorage = {
-  async getTasks(uid: string): Promise<Task[]> {
+// ────────────────────────────────────────────────────────────
+// Notification storage operations
+// ────────────────────────────────────────────────────────────
+
+export const notificationStorage = {
+  async getNotifications(): Promise<AppNotification[]> {
     try {
-      const key = userTasksKey(uid);
-      console.log(`[storageService] Reading user tasks from key: ${key}`);
-      const json = await AsyncStorage.getItem(key);
-      const tasks: any[] = json ? JSON.parse(json) : [];
-      const normalizedTasks = tasks.map(normalizeTask);
-      console.log(
-        `[storageService] Retrieved ${normalizedTasks.length} user tasks for uid: ${uid}.`,
-      );
-      return normalizedTasks;
-    } catch (error) {
-      console.error("Error getting user tasks:", error);
-      return [];
-    }
-  },
-  async saveTasks(uid: string, tasks: Task[]): Promise<void> {
-    try {
-      const key = userTasksKey(uid);
-      console.log(
-        `[storageService] Saving ${tasks.length} user tasks to key: ${key}`,
-      );
-      await AsyncStorage.setItem(key, JSON.stringify(tasks));
-    } catch (error) {
-      console.error("Error saving user tasks:", error);
-    }
-  },
-  async getGroups(uid: string): Promise<Group[]> {
-    try {
-      const json = await AsyncStorage.getItem(userGroupsKey(uid));
+      const json = await AsyncStorage.getItem(STORAGE_KEYS.NOTIFICATIONS);
       return json ? JSON.parse(json) : [];
     } catch (error) {
-      console.error("Error getting user groups:", error);
+      console.error("Error getting notifications:", error);
       return [];
     }
   },
-  async saveGroups(uid: string, groups: Group[]): Promise<void> {
+
+  async saveNotifications(notifications: AppNotification[]): Promise<void> {
     try {
-      await AsyncStorage.setItem(userGroupsKey(uid), JSON.stringify(groups));
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.NOTIFICATIONS,
+        JSON.stringify(notifications),
+      );
     } catch (error) {
-      console.error("Error saving user groups:", error);
+      console.error("Error saving notifications:", error);
+    }
+  },
+
+  async addNotification(notification: AppNotification): Promise<void> {
+    try {
+      const notifications = await this.getNotifications();
+      notifications.unshift(notification); // newest first
+      await this.saveNotifications(notifications);
+    } catch (error) {
+      console.error("Error adding notification:", error);
+    }
+  },
+
+  async markAsRead(notificationId: string): Promise<void> {
+    try {
+      const notifications = await this.getNotifications();
+      const index = notifications.findIndex((n) => n.id === notificationId);
+      if (index !== -1 && !notifications[index].read) {
+        notifications[index] = {
+          ...notifications[index],
+          read: true,
+          readAt: Date.now(),
+        };
+        await this.saveNotifications(notifications);
+      }
+    } catch (error) {
+      console.error("Error marking notification as read:", error);
+    }
+  },
+
+  async deleteNotification(notificationId: string): Promise<void> {
+    try {
+      const notifications = await this.getNotifications();
+      const filtered = notifications.filter((n) => n.id !== notificationId);
+      await this.saveNotifications(filtered);
+    } catch (error) {
+      console.error("Error deleting notification:", error);
+    }
+  },
+
+  async clearNotifications(): Promise<void> {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.NOTIFICATIONS,
+        JSON.stringify([]),
+      );
+    } catch (error) {
+      console.error("Error clearing notifications:", error);
+    }
+  },
+
+  /** Mark all notifications as read */
+  async markAllAsRead(): Promise<void> {
+    try {
+      const notifications = await this.getNotifications();
+      const updated = notifications.map((n) =>
+        n.read ? n : { ...n, read: true, readAt: Date.now() },
+      );
+      await this.saveNotifications(updated);
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+    }
+  },
+
+  /** Get unread count */
+  async getUnreadCount(): Promise<number> {
+    try {
+      const notifications = await this.getNotifications();
+      return notifications.filter((n) => !n.read).length;
+    } catch (error) {
+      return 0;
     }
   },
 };
 
-/**
- * Guest-scoped storage — separate from the legacy @piko_tasks/@piko_groups keys.
- */
-export const guestScopedStorage = {
-  async getTasks(): Promise<Task[]> {
-    try {
-      const json = await AsyncStorage.getItem(STORAGE_KEYS.GUEST_TASKS);
-      const tasks: any[] = json ? JSON.parse(json) : [];
-      return tasks.map(normalizeTask);
-    } catch (error) {
-      console.error("Error getting guest tasks:", error);
-      return [];
-    }
-  },
-  async saveTasks(tasks: Task[]): Promise<void> {
-    try {
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.GUEST_TASKS,
-        JSON.stringify(tasks),
-      );
-    } catch (error) {
-      console.error("Error saving guest tasks:", error);
-    }
-  },
-  async getGroups(): Promise<Group[]> {
-    try {
-      const json = await AsyncStorage.getItem(STORAGE_KEYS.GUEST_GROUPS);
-      return json ? JSON.parse(json) : [];
-    } catch (error) {
-      console.error("Error getting guest groups:", error);
-      return [];
-    }
-  },
-  async saveGroups(groups: Group[]): Promise<void> {
-    try {
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.GUEST_GROUPS,
-        JSON.stringify(groups),
-      );
-    } catch (error) {
-      console.error("Error saving guest groups:", error);
-    }
-  },
-  async clearAll(): Promise<void> {
-    try {
-      await AsyncStorage.removeItem(STORAGE_KEYS.GUEST_TASKS);
-      await AsyncStorage.removeItem(STORAGE_KEYS.GUEST_GROUPS);
-    } catch (error) {
-      console.error("Error clearing guest storage:", error);
-    }
-  },
-};
-
+// ────────────────────────────────────────────────────────────
 // Clear all storage
-export const clearAllStorage = async (): Promise<void> => {
+// ────────────────────────────────────────────────────────────
+
+export async function clearAllStorage(): Promise<void> {
   try {
-    await taskStorage.clearTasks();
-    await groupStorage.clearGroups();
-    await userStorage.clearUser();
-    await guestStorage.clearGuestStatus();
+    await AsyncStorage.multiRemove([
+      STORAGE_KEYS.TASKS,
+      STORAGE_KEYS.USER,
+      STORAGE_KEYS.IS_GUEST,
+      STORAGE_KEYS.NOTIFICATIONS,
+    ]);
   } catch (error) {
-    console.error("Error clearing all storage:", error);
+    console.error("Error clearing storage:", error);
   }
+}
+
+// ────────────────────────────────────────────────────────────
+// Deprecated storage exports (kept for backward compatibility)
+// These are no longer used by the app but are exported so that
+// existing import references do not break during staged deprecation.
+// ────────────────────────────────────────────────────────────
+
+/** @deprecated Groups are no longer supported. Returns an empty array. */
+export const groupStorage = {
+  getGroups: async (): Promise<any[]> => [],
+  saveGroups: async (_groups: any[]): Promise<void> => {},
+  addGroup: async (_group: any): Promise<void> => {},
+  updateGroup: async (_group: any): Promise<void> => {},
+  deleteGroup: async (_groupId: string): Promise<void> => {},
+  clearGroups: async (): Promise<void> => {},
 };
+
+/** @deprecated Memberships are no longer supported. Returns an empty array. */
+export const membershipStorage = {
+  getMemberships: async (_uid: string): Promise<any[]> => [],
+  saveMemberships: async (
+    _uid: string,
+    _memberships: any[],
+  ): Promise<void> => {},
+};
+
+/** @deprecated User-scoped storage for groups — no longer supported. */
+export const userScopedStorage = {
+  getGroups: async (_uid: string): Promise<any[]> => [],
+  saveGroups: async (_uid: string, _groups: any[]): Promise<void> => {},
+};
+
+/** @deprecated Guest-scoped storage for groups — no longer supported. */
+export const guestScopedStorage = {
+  getGroups: async (): Promise<any[]> => [],
+  saveGroups: async (_groups: any[]): Promise<void> => {},
+};
+
+// Run storage migration on import
+checkAndMigrateStorage();
