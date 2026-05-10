@@ -38,6 +38,10 @@ export interface Group {
   isArchived?: boolean;
   lastActivityAt?: number;
   taskCount?: number;
+  // Sync metadata
+  syncStatus?: "local" | "synced" | "pending";
+  pendingChanges?: boolean;
+  lastSyncedAt?: number;
 }
 
 // Group member (stored in /groups/{groupId}/members/{uid})
@@ -63,6 +67,12 @@ export interface Membership {
   joinedAt: number;
   lastViewedAt?: number;
   unreadCount?: number;
+  // Sync safety metadata
+  updatedAt?: number;
+  lastSyncedAt?: number;
+  membershipVersion?: number;
+  syncStatus?: "local" | "synced" | "pending";
+  pendingChanges?: boolean;
 }
 
 // Invitation
@@ -79,6 +89,11 @@ export interface Invitation {
   createdAt: number;
   expiresAt: number;
   message?: string;
+  isArchived?: boolean;
+  updatedAt?: number;
+  lastSyncedAt?: number;
+  syncStatus?: "local" | "synced" | "pending";
+  pendingChanges?: boolean;
 }
 
 // Notification
@@ -167,6 +182,13 @@ export interface CreateGroupResult {
 export interface JoinGroupResult {
   success: boolean;
   group?: Group;
+  status?:
+    | "joining"
+    | "already_member"
+    | "group_not_found"
+    | "group_archived"
+    | "join_success"
+    | "join_failed";
   error?: string;
 }
 

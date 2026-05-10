@@ -38,13 +38,25 @@ service cloud.firestore {
       }
     }
 
+    // === USERS LIST (for search/invite) ===
+    // Authenticated users can list and search users for group invitations
+    match /users/{document=**} {
+      allow list: if request.auth != null;
+    }
+
     // === GROUPS COLLECTION (GLOBAL) ===
     match /groups/{groupId} {
-      // Anyone can read a group if they are a member
+      // Members can always read full group documents.
       allow read: if request.auth != null
                   && exists(
                     /databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)
                   );
+
+      // P0.2 join-by-code support:
+      // Authenticated users may read non-archived group docs to resolve invite code joins.
+      // (Further hardening can move this to a dedicated public index/lookup document later.)
+      allow read: if request.auth != null
+                  && resource.data.isArchived != true;
 
       // Authenticated users can create groups
       allow create: if request.auth != null

@@ -109,11 +109,11 @@ export const syncFacade = {
     return syncOrchestrator.saveTasks(tasks);
   },
 
-  // Group write-through methods
-  /** @deprecated Use syncOrchestrator.addGroup() instead */
-  async addGroup(group: Group, creatorRole: GroupMember): Promise<void> {
-    return syncOrchestrator.addGroup(group, creatorRole);
-  },
+// Group write-through methods
+   /** @deprecated Use syncOrchestrator.addGroup() instead */
+   async addGroup(group: Group, creatorRole: GroupMember): Promise<{ success: boolean; error?: string }> {
+     return syncOrchestrator.addGroup(group, creatorRole);
+   },
 
   /** @deprecated Use syncOrchestrator.updateGroup() instead */
   async updateGroup(group: Group): Promise<void> {

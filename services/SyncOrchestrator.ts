@@ -1,9 +1,11 @@
 import {
   groupStorage,
+  membershipStorage,
   taskStorage,
   userStorage,
 } from "@/services/storageService";
 import { Group, GroupMember, Membership, SyncState, Task } from "@/types";
+import { normalizeMemberships } from "@/utils/normalizeMembership";
 import { normalizeTask } from "@/utils/normalizeTask";
 // Modular Firebase imports
 import { getApp } from "@react-native-firebase/app";
@@ -124,6 +126,7 @@ class SyncOrchestrator {
   // Realtime listener unsubscribe functions
   private _taskUnsubscribe: (() => void) | null = null;
   private _groupUnsubscribe: (() => void) | null = null;
+  private _lastMembershipDocCount: number | null = null;
 
   // ──────────────────────────────────────────────────────────
   // Public API
@@ -467,20 +470,28 @@ class SyncOrchestrator {
       );
       const membershipsColRef = getCollectionRef(userMembershipsPath(uid));
       const membershipSnapshot = await getDocs(membershipsColRef);
-      const memberships: Membership[] = [];
+      const rawMemberships: any[] = [];
       membershipSnapshot.forEach((docSnap) => {
         const data = docSnap.data() as Membership;
-        memberships.push({ ...data, groupId: docSnap.id });
+        rawMemberships.push({ ...data, groupId: docSnap.id });
       });
 
-      if (memberships.length > 0 && !signal.aborted) {
+      const memberships = normalizeMemberships(rawMemberships);
+
+      // Persist normalized memberships even if empty; reconciliation behavior
+      // is handled by _mergeMemberships safety guards.
+      await membershipStorage.saveMemberships(uid, memberships);
+
+      if (!signal.aborted) {
         console.log(
-          `[SyncOrchestrator] Found ${memberships.length} remote memberships. Fetching groups...`,
+          `[SyncOrchestrator] syncDown memberships normalized count: ${memberships.length}. Reconciling groups...`,
         );
-        await this._mergeMemberships(uid, memberships);
+        await this._mergeMemberships(uid, memberships, {
+          source: "syncDown",
+          remoteDocCount: membershipSnapshot.size,
+          allowEmptyRemoteReplace: false,
+        });
         console.log(`[SyncOrchestrator] Memberships merged.`);
-      } else {
-        console.log(`[SyncOrchestrator] No remote memberships found.`);
       }
 
       console.log(`[SyncOrchestrator] syncDown completed successfully.`);
@@ -523,8 +534,51 @@ class SyncOrchestrator {
   private async _mergeMemberships(
     uid: string,
     memberships: Membership[],
+    options?: {
+      source?: "syncDown" | "realtime";
+      remoteDocCount?: number;
+      allowEmptyRemoteReplace?: boolean;
+    },
   ): Promise<void> {
-    const groupIds = memberships.map((m) => m.groupId);
+    const normalizedMemberships = normalizeMemberships(memberships);
+    const localMemberships = await membershipStorage.getMemberships(uid);
+    const localMembershipIds = new Set(localMemberships.map((m) => m.groupId));
+    const normalizedRemoteIds = new Set(
+      normalizedMemberships.map((m) => m.groupId),
+    );
+
+    const remoteDocCount =
+      options?.remoteDocCount ?? normalizedMemberships.length;
+    const allowEmptyRemoteReplace = options?.allowEmptyRemoteReplace === true;
+
+    // Guard against destructive overwrite during transient empty/partial snapshots.
+    const hasLocalMemberships = localMemberships.length > 0;
+    const isRemoteEmpty = normalizedMemberships.length === 0;
+    const shouldProtectLocalFromEmpty =
+      hasLocalMemberships && isRemoteEmpty && !allowEmptyRemoteReplace;
+
+    if (shouldProtectLocalFromEmpty) {
+      console.warn(
+        `[SyncOrchestrator] Membership merge guard (${options?.source ?? "unknown"}): remote empty while local has ${localMemberships.length}. Preserving local memberships/groups.`,
+      );
+      return;
+    }
+
+    // If remote set is a strict subset of local, treat as potentially partial during
+    // uncertain sync windows and avoid destructive local replacement.
+    const isRemoteStrictSubsetOfLocal =
+      normalizedMemberships.length > 0 &&
+      normalizedMemberships.length < localMemberships.length &&
+      Array.from(normalizedRemoteIds).every((id) => localMembershipIds.has(id));
+
+    if (isRemoteStrictSubsetOfLocal && !allowEmptyRemoteReplace) {
+      console.warn(
+        `[SyncOrchestrator] Membership merge guard (${options?.source ?? "unknown"}): remote subset (${normalizedMemberships.length}/${localMemberships.length}). Preserving local until stable snapshot.`,
+      );
+      return;
+    }
+
+    const groupIds = normalizedMemberships.map((m) => m.groupId);
     const groups: Group[] = [];
 
     for (const gid of groupIds) {
@@ -540,7 +594,25 @@ class SyncOrchestrator {
       }
     }
 
-    await groupStorage.saveGroups(groups);
+    // If remote fetch failed to resolve any group docs while memberships exist,
+    // avoid wiping local groups as this likely indicates transient inconsistency.
+    if (
+      groupIds.length > 0 &&
+      groups.length === 0 &&
+      !allowEmptyRemoteReplace
+    ) {
+      console.warn(
+        `[SyncOrchestrator] Membership merge guard (${options?.source ?? "unknown"}): 0/${groupIds.length} groups resolved. Preserving local groups.`,
+      );
+      return;
+    }
+
+    // Save normalized memberships before updating groups to keep entity lifecycle stable.
+    await membershipStorage.saveMemberships(uid, normalizedMemberships);
+
+    if (groups.length > 0 || remoteDocCount === 0 || allowEmptyRemoteReplace) {
+      await groupStorage.saveGroups(groups);
+    }
   }
 
   // ──────────────────────────────────────────────────────────
@@ -583,14 +655,36 @@ class SyncOrchestrator {
         console.log(
           `[SyncOrchestrator] Memberships onSnapshot: ${snapshot.docs.length} docs, ${snapshot.docChanges().length} changes`,
         );
-        const memberships: Membership[] = [];
+        const rawMemberships: any[] = [];
         snapshot.forEach((docSnap) => {
           const data = docSnap.data() as Membership;
-          memberships.push({ ...data, groupId: docSnap.id });
+          rawMemberships.push({ ...data, groupId: docSnap.id });
         });
 
-        if (memberships.length > 0 || snapshot.docChanges().length > 0) {
-          await this._mergeMemberships(uid, memberships);
+        const memberships = normalizeMemberships(rawMemberships);
+        await membershipStorage.saveMemberships(uid, memberships);
+
+        // Realtime safety guard: ignore first empty snapshot if we previously had docs,
+        // as it can be transient during listener attach/reconnect.
+        if (
+          snapshot.size === 0 &&
+          this._lastMembershipDocCount &&
+          this._lastMembershipDocCount > 0
+        ) {
+          console.warn(
+            `[SyncOrchestrator] Realtime memberships guard: transient empty snapshot detected after previously having ${this._lastMembershipDocCount} docs. Skipping destructive merge.`,
+          );
+          return;
+        }
+
+        this._lastMembershipDocCount = snapshot.size;
+
+        if (snapshot.docChanges().length > 0 || memberships.length > 0) {
+          await this._mergeMemberships(uid, memberships, {
+            source: "realtime",
+            remoteDocCount: snapshot.size,
+            allowEmptyRemoteReplace: false,
+          });
         }
       },
       (error) =>
@@ -728,51 +822,58 @@ class SyncOrchestrator {
     }
   }
 
-  // ──────────────────────────────────────────────────────────
-  // Group write-through methods
-  // ──────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────
+   // Group write-through methods
+   // ──────────────────────────────────────────────────────────
 
-  async addGroup(group: Group, creatorRole: GroupMember): Promise<void> {
-    console.log(`[SyncOrchestrator] addGroup: ${group.id}`);
-    await groupStorage.addGroup(group);
+   async addGroup(group: Group, creatorRole: GroupMember): Promise<{ success: boolean; error?: string }> {
+     console.log(`[SyncOrchestrator] addGroup: ${group.id}`);
+     await groupStorage.addGroup(group);
 
-    if (this._canWriteThrough()) {
-      try {
-        const batch = writeBatch(db);
+     if (this._canWriteThrough()) {
+       try {
+         const batch = writeBatch(db);
 
-        const groupRef = getDocRef(groupsPath, group.id);
-        batch.set(
-          groupRef,
-          sanitizeForFirestore({ ...group, memberCount: 1, isArchived: false }),
-        );
+         const groupRef = getDocRef(groupsPath, group.id);
+         batch.set(
+           groupRef,
+           sanitizeForFirestore({ ...group, memberCount: 1, isArchived: false }),
+         );
 
-        const memberRef = getDocRef(groupMembersPath(group.id), this._uid!);
-        batch.set(memberRef, sanitizeForFirestore(creatorRole));
+         const memberRef = getDocRef(groupMembersPath(group.id), this._uid!);
+         batch.set(memberRef, sanitizeForFirestore(creatorRole));
 
-        const membershipRef = getDocRef(
-          userMembershipsPath(this._uid!),
-          group.id,
-        );
-        batch.set(
-          membershipRef,
-          sanitizeForFirestore({
-            groupId: group.id,
-            groupName: group.name,
-            groupCode: group.code,
-            role: creatorRole.role,
-            joinedAt: creatorRole.joinedAt,
-          }),
-        );
+         const membershipRef = getDocRef(
+           userMembershipsPath(this._uid!),
+           group.id,
+         );
+         batch.set(
+           membershipRef,
+           sanitizeForFirestore({
+             groupId: group.id,
+             groupName: group.name,
+             groupCode: group.code,
+             role: creatorRole.role,
+             joinedAt: creatorRole.joinedAt,
+           }),
+         );
 
-        await batch.commit();
-        console.log(
-          `[SyncOrchestrator] addGroup: ${group.id} committed to Firestore.`,
-        );
-      } catch (e) {
-        console.error(`[SyncOrchestrator] addGroup firestore error:`, e);
-      }
-    }
-  }
+         await batch.commit();
+         console.log(
+           `[SyncOrchestrator] addGroup: ${group.id} committed to Firestore.`,
+         );
+         return { success: true };
+       } catch (e) {
+         console.error(`[SyncOrchestrator] addGroup firestore error:`, e);
+         return { success: false, error: String(e) };
+       }
+     } else {
+       console.warn(
+         `[SyncOrchestrator] addGroup: Skipping Firestore write - orchestrator not ready. State: ${SyncLifecycleState[this._state]}, UID: ${this._uid}`,
+       );
+       return { success: false, error: "Sync not ready - group saved locally only" };
+     }
+   }
 
   async updateGroup(group: Group): Promise<void> {
     console.log(`[SyncOrchestrator] updateGroup: ${group.id}`);
@@ -808,18 +909,28 @@ class SyncOrchestrator {
         const groupRef = getDocRef(groupsPath, groupId);
         batch.update(groupRef, {
           isArchived: true,
+          memberCount: 0,
           updatedAt: Date.now(),
         });
 
-        const membershipRef = getDocRef(
-          userMembershipsPath(this._uid!),
-          groupId,
-        );
-        batch.delete(membershipRef);
+        // Delete all group members + denormalized memberships for lifecycle integrity.
+        const membersColRef = getCollectionRef(groupMembersPath(groupId));
+        const membersSnapshot = await getDocs(membersColRef);
+        membersSnapshot.forEach((memberDoc) => {
+          const memberUid = memberDoc.id;
+          const memberRef = getDocRef(groupMembersPath(groupId), memberUid);
+          batch.delete(memberRef);
+
+          const membershipRef = getDocRef(
+            userMembershipsPath(memberUid),
+            groupId,
+          );
+          batch.delete(membershipRef);
+        });
 
         await batch.commit();
         console.log(
-          `[SyncOrchestrator] deleteGroup: ${groupId} committed to Firestore.`,
+          `[SyncOrchestrator] deleteGroup: ${groupId} archived and memberships cleaned up.`,
         );
       } catch (e) {
         console.error(`[SyncOrchestrator] deleteGroup firestore error:`, e);
@@ -852,7 +963,13 @@ class SyncOrchestrator {
   // Group member write-through methods
   // ──────────────────────────────────────────────────────────
 
-  async addGroupMember(groupId: string, member: GroupMember): Promise<void> {
+  async addGroupMember(
+    groupId: string,
+    member: GroupMember,
+    options?: {
+      skipGroupCountUpdate?: boolean;
+    },
+  ): Promise<void> {
     if (!this._uid) return;
 
     try {
@@ -883,9 +1000,11 @@ class SyncOrchestrator {
           }),
         );
 
-        batch.update(groupDocRef, {
-          memberCount: FieldValue.increment(1),
-        });
+        if (!options?.skipGroupCountUpdate) {
+          batch.update(groupDocRef, {
+            memberCount: FieldValue.increment(1),
+          });
+        }
       }
 
       await batch.commit();

@@ -2,15 +2,18 @@ import GroupCard from "@/components/groups/GroupCard";
 import GroupModal from "@/components/groups/GroupModal";
 import MemberChips from "@/components/groups/MemberChips";
 import MemberSearch from "@/components/groups/MemberSearch";
+import AuthScreen from "@/components/tasks/AuthScreen";
 import EmptyState from "@/components/ui/EmptyState";
 import Loading from "@/components/ui/Loading";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { groupService } from "@/services/groupService";
-import { Group } from "@/types";
+import { Group, SyncState } from "@/types";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useFocusEffect } from "@react-navigation/native";
-import React, { useCallback, useState } from "react";
+import * as Clipboard from "expo-clipboard";
+import { router } from "expo-router";
+import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -23,7 +26,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import styles from "./groups.styles";
 
 const GroupsScreen = () => {
-  const { user, isGuest } = useAuth();
+  const { user, isGuest, signIn, continueAsGuest, syncState } = useAuth();
   const [groups, setGroups] = useState<Group[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
@@ -34,10 +37,18 @@ const GroupsScreen = () => {
   >([]);
   const insets = useSafeAreaInsets();
   const [loadingGroups, setLoadingGroups] = useState<boolean>(true);
+  const [creatingGroup, setCreatingGroup] = useState<boolean>(false);
+  const [joiningGroup, setJoiningGroup] = useState<boolean>(false);
+
+  // Use refs to prevent unnecessary re-fetches when isGuest/user reference changes
+  const isGuestRef = useRef(isGuest);
+  isGuestRef.current = isGuest;
+  const uidRef = useRef(user?.uid);
+  uidRef.current = user?.uid;
 
   // Load groups
   const loadGroups = useCallback(async () => {
-    if (!user && !isGuest) return;
+    if (!uidRef.current && !isGuestRef.current) return;
     setLoadingGroups(true);
     try {
       const loadedGroups = await groupService.getGroups();
@@ -47,7 +58,7 @@ const GroupsScreen = () => {
     } finally {
       setLoadingGroups(false);
     }
-  }, [user, isGuest]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -67,7 +78,17 @@ const GroupsScreen = () => {
       return;
     }
 
+    // Check if sync is ready before creating group
+    if (syncState !== SyncState.READY) {
+      Alert.alert(
+        "Not Ready",
+        "Please wait for sync to complete before creating groups.",
+      );
+      return;
+    }
+
     try {
+      setCreatingGroup(true);
       const memberEmails = invitedMembers.map((m) => m.email);
       const newGroup = await groupService.createGroup(
         newGroupName.trim(),
@@ -85,6 +106,8 @@ const GroupsScreen = () => {
     } catch (error) {
       console.error("Error creating group:", error);
       Alert.alert("Error", "Failed to create group.");
+    } finally {
+      setCreatingGroup(false);
     }
   };
 
@@ -101,24 +124,47 @@ const GroupsScreen = () => {
     }
 
     try {
-      const group = await groupService.joinGroup(
+      setJoiningGroup(true);
+      const result = await groupService.joinGroup(
         joinGroupCode.trim(),
         user.uid,
       );
-      if (group) {
+      if (result.success && result.group) {
         setGroups((prev) => {
-          const filtered = prev.filter((g) => g.id !== group.id);
-          return [group, ...filtered];
+          const filtered = prev.filter((g) => g.id !== result.group!.id);
+          return [result.group!, ...filtered];
         });
         setJoinGroupCode("");
         setShowJoinModal(false);
-        Alert.alert("Success", `You joined "${group.name}"!`);
+        if (result.status === "already_member") {
+          Alert.alert(
+            "Already a member",
+            `You are already in "${result.group.name}".`,
+          );
+        } else {
+          Alert.alert("Success", `You joined "${result.group.name}"!`);
+        }
       } else {
-        Alert.alert("Error", "Group not found. Please check the code.");
+        switch (result.status) {
+          case "group_not_found":
+            Alert.alert(
+              "Group not found",
+              "Please check the code and try again.",
+            );
+            break;
+          case "group_archived":
+            Alert.alert("Group unavailable", "This group has been archived.");
+            break;
+          default:
+            Alert.alert("Join failed", result.error || "Failed to join group.");
+            break;
+        }
       }
     } catch (error) {
       console.error("Error joining group:", error);
       Alert.alert("Error", "Failed to join group.");
+    } finally {
+      setJoiningGroup(false);
     }
   };
 
@@ -171,7 +217,18 @@ const GroupsScreen = () => {
 
   // Copy code to clipboard
   const copyCode = (code: string) => {
-    Alert.alert("Group Code", `Code: ${code}\n\nCopied to clipboard!`);
+    Clipboard.setStringAsync(code)
+      .then(() =>
+        Alert.alert("Copied", `Group code ${code} copied to clipboard.`),
+      )
+      .catch(() => Alert.alert("Group Code", `Code: ${code}`));
+  };
+
+  const openGroupWorkspace = (group: Group) => {
+    router.push({
+      pathname: "/groups/[groupId]",
+      params: { groupId: group.id },
+    });
   };
 
   const handleAddMember = (member: {
@@ -190,19 +247,11 @@ const GroupsScreen = () => {
   // Not logged in state
   if (!user && !isGuest) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top + 20 }]}>
-        <View style={styles.authContainer}>
-          <Ionicons
-            name="people-outline"
-            size={64}
-            color={Colors.light.textTertiary}
-          />
-          <Text style={styles.authTitle}>Groups</Text>
-          <Text style={styles.authSubtitle}>
-            Sign in to create or join groups and collaborate with others.
-          </Text>
-        </View>
-      </View>
+      <AuthScreen
+        insetsTop={insets.top}
+        onSignIn={signIn}
+        onContinueAsGuest={continueAsGuest}
+      />
     );
   }
 
@@ -243,7 +292,7 @@ const GroupsScreen = () => {
             <GroupCard
               key={group.id}
               group={group}
-              onPress={() => {}}
+              onPress={openGroupWorkspace}
               onLongPress={leaveGroup}
               onCopyCode={copyCode}
             />
@@ -272,8 +321,11 @@ const GroupsScreen = () => {
           <TouchableOpacity
             style={styles.modalSaveButton}
             onPress={createGroup}
+            disabled={creatingGroup}
           >
-            <Text style={styles.modalSaveButtonText}>Create Group</Text>
+            <Text style={styles.modalSaveButtonText}>
+              {creatingGroup ? "Creating..." : "Create Group"}
+            </Text>
           </TouchableOpacity>
         }
       >
@@ -317,7 +369,9 @@ const GroupsScreen = () => {
         title="Join Group"
         footer={
           <TouchableOpacity style={styles.modalSaveButton} onPress={joinGroup}>
-            <Text style={styles.modalSaveButtonText}>Join Group</Text>
+            <Text style={styles.modalSaveButtonText}>
+              {joiningGroup ? "Joining..." : "Join Group"}
+            </Text>
           </TouchableOpacity>
         }
       >
@@ -328,7 +382,7 @@ const GroupsScreen = () => {
           </Text>
           <TextInput
             style={[styles.modalInput, styles.codeInput]}
-            placeholder="000000"
+            placeholder="0 0 0 0 0 0"
             placeholderTextColor={Colors.light.textTertiary}
             value={joinGroupCode}
             onChangeText={(text) =>

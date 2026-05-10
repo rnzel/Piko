@@ -10,11 +10,21 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import { getApp } from "@react-native-firebase/app";
+import {
+  collection,
+  getDocs,
+  getFirestore,
+  limit,
+  query,
+  where,
+} from "@react-native-firebase/firestore";
 
 type UserResult = {
   id: string;
   email: string;
   displayName: string;
+  photoURL?: string;
 };
 
 type Props = {
@@ -23,24 +33,62 @@ type Props = {
   placeholder?: string;
 };
 
-// Mock search function since we're in guest/local mode mostly
-// In a real app, this would call a backend service
-const mockSearchUsers = async (query: string): Promise<UserResult[]> => {
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  if (!query.trim()) return [];
+const searchUsers = async (queryText: string): Promise<UserResult[]> => {
+  if (!queryText.trim()) return [];
 
-  const mockUsers: UserResult[] = [
-    { id: "1", email: "alex@example.com", displayName: "Alex Rivera" },
-    { id: "2", email: "sarah@example.com", displayName: "Sarah Chen" },
-    { id: "3", email: "jordan@example.com", displayName: "Jordan Smith" },
-    { id: "4", email: "taylor@example.com", displayName: "Taylor Wong" },
-  ];
+  // Only search in authenticated mode
+  const db = getFirestore(getApp());
+  const usersRef = collection(db, "users");
 
-  return mockUsers.filter(
-    (u) =>
-      u.email.toLowerCase().includes(query.toLowerCase()) ||
-      u.displayName.toLowerCase().includes(query.toLowerCase()),
-  );
+  try {
+    // Create queries for email and displayName search
+    const emailQuery = query(
+      usersRef,
+      where("email", ">=", queryText.toLowerCase()),
+      where("email", "<=", queryText.toLowerCase() + "\uf8ff"),
+      limit(10),
+    );
+    const nameQuery = query(
+      usersRef,
+      where("displayName", ">=", queryText),
+      where("displayName", "<=", queryText + "\uf8ff"),
+      limit(10),
+    );
+
+    const [emailSnap, nameSnap] = await Promise.all([
+      getDocs(emailQuery),
+      getDocs(nameQuery),
+    ]);
+
+    const results = new Map<string, UserResult>();
+
+    emailSnap.forEach((doc) => {
+      const data = doc.data();
+      results.set(doc.id, {
+        id: doc.id,
+        email: String(data?.email || ""),
+        displayName: String(data?.displayName || ""),
+        photoURL: typeof data?.photoURL === "string" ? data.photoURL : undefined,
+      });
+    });
+
+    nameSnap.forEach((doc) => {
+      const data = doc.data();
+      if (!results.has(doc.id)) {
+        results.set(doc.id, {
+          id: doc.id,
+          email: String(data?.email || ""),
+          displayName: String(data?.displayName || ""),
+          photoURL: typeof data?.photoURL === "string" ? data.photoURL : undefined,
+        });
+      }
+    });
+
+    return Array.from(results.values());
+  } catch (error) {
+    console.warn("[MemberSearch] Firebase search failed:", error);
+    return [];
+  }
 };
 
 const MemberSearch = ({ onSelect, excludeIds, placeholder }: Props) => {
@@ -58,9 +106,9 @@ const MemberSearch = ({ onSelect, excludeIds, placeholder }: Props) => {
 
       setLoading(true);
       try {
-        const filtered = await mockSearchUsers(text);
+        const results = await searchUsers(text);
         setResults(
-          filtered.filter(
+          results.filter(
             (u) => !excludeIds.includes(u.id) && !excludeIds.includes(u.email),
           ),
         );

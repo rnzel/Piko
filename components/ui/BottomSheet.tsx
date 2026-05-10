@@ -1,14 +1,15 @@
 import { Colors } from "@/constants/theme";
-import React, { ReactNode } from "react";
+import React, { ReactNode, useEffect, useState } from "react";
 import {
-    Dimensions,
-    KeyboardAvoidingView,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableWithoutFeedback,
-    View
+  Dimensions,
+  Keyboard,
+  Modal,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableWithoutFeedback,
+  View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -32,6 +33,27 @@ const BottomSheet = ({
   const insets = useSafeAreaInsets();
   const screenHeight = Dimensions.get("window").height;
   const modalSheetMaxHeight = screenHeight - insets.top - insets.bottom - 48;
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+      },
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => {
+        setKeyboardHeight(0);
+      },
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   return (
     <Modal
@@ -49,42 +71,46 @@ const BottomSheet = ({
           },
         ]}
       >
-        <TouchableWithoutFeedback onPress={onClose}>
+        <TouchableWithoutFeedback
+          onPress={() => {
+            Keyboard.dismiss();
+            onClose();
+          }}
+        >
           <View style={styles.modalOverlay} />
         </TouchableWithoutFeedback>
 
-        <KeyboardAvoidingView
-          behavior="padding"
-          keyboardVerticalOffset={20}
-          style={{ width: "100%" }}
+        <View
+          style={[
+            styles.modalSheet,
+            {
+              maxHeight: modalSheetMaxHeight,
+              minHeight,
+              marginBottom: keyboardHeight,
+            },
+          ]}
         >
-          <View
-            style={[
-              styles.modalSheet,
-              { maxHeight: modalSheetMaxHeight, minHeight },
+          <View style={styles.modalHandle} />
+          {title ? (
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{title}</Text>
+            </View>
+          ) : null}
+
+          <ScrollView
+            contentContainerStyle={[
+              styles.modalScrollContent,
+              { flexGrow: 1, paddingBottom: 8 },
             ]}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
           >
-            <View style={styles.modalHandle} />
-            {title ? (
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{title}</Text>
-              </View>
-            ) : null}
+            {children}
+          </ScrollView>
 
-            <ScrollView
-              contentContainerStyle={[
-                styles.modalScrollContent,
-                { flexGrow: 1, paddingBottom: 8 },
-              ]}
-              keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
-            >
-              {children}
-            </ScrollView>
-
-            {footer && <View style={styles.modalFooter}>{footer}</View>}
-          </View>
-        </KeyboardAvoidingView>
+          {footer && <View style={styles.modalFooter}>{footer}</View>}
+        </View>
       </View>
     </Modal>
   );
@@ -95,7 +121,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "flex-end",
-    paddingHorizontal: 20,
     paddingVertical: 20,
   },
   modalOverlay: {
@@ -104,7 +129,8 @@ const styles = StyleSheet.create({
   },
   modalSheet: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
+    borderTopEndRadius: 24,
+    borderTopStartRadius: 24,
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 8,

@@ -1,3 +1,4 @@
+import AuthScreen from "@/components/tasks/AuthScreen";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -44,34 +45,11 @@ const ProfileScreen = () => {
   // Not logged in state - show login prompt
   if (!user && !isGuest) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top + 20 }]}>
-        <View style={styles.authContainer}>
-          <View style={styles.avatarPlaceholder}>
-            <Ionicons
-              name="person-outline"
-              size={40}
-              color={Colors.light.textTertiary}
-            />
-          </View>
-          <Text style={styles.authTitle}>Welcome to Piko</Text>
-          <Text style={styles.authSubtitle}>
-            Sign in to sync your tasks across devices and collaborate with
-            others.
-          </Text>
-
-          <TouchableOpacity style={styles.signInButton} onPress={signIn}>
-            <Ionicons name="logo-google" size={20} color="#FFFFFF" />
-            <Text style={styles.signInButtonText}>Sign in with Google</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.signInButton, styles.guestButton]}
-            onPress={continueAsGuest}
-          >
-            <Text style={styles.guestButtonText}>Continue as Guest</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
+      <AuthScreen
+        insetsTop={insets.top}
+        onSignIn={signIn}
+        onContinueAsGuest={continueAsGuest}
+      />
     );
   }
 

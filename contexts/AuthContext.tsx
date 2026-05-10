@@ -23,6 +23,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
 } from "react";
 import { Alert } from "react-native";
@@ -384,18 +385,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [isGuest, initializeSync, syncState]);
 
+  const contextValue = useMemo(
+    () => ({
+      user,
+      loading,
+      isGuest,
+      signIn,
+      signOut,
+      continueAsGuest,
+      syncState,
+    }),
+    [user, loading, isGuest, signIn, signOut, continueAsGuest, syncState],
+  );
+
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        isGuest,
-        signIn,
-        signOut,
-        continueAsGuest,
-        syncState,
-      }}
-    >
+    <AuthContext.Provider value={contextValue}>
       {children}
 
       <MigrationModal

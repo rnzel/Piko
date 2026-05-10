@@ -1,11 +1,25 @@
+import AuthScreen from "@/components/tasks/AuthScreen";
 import EmptyState from "@/components/ui/EmptyState";
 import { Colors } from "@/constants/theme";
+import { useAuth } from "@/contexts/AuthContext";
 import React from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const NotificationsScreen = () => {
+  const { user, isGuest, signIn, continueAsGuest } = useAuth();
   const insets = useSafeAreaInsets();
+
+  // Not logged in state
+  if (!user && !isGuest) {
+    return (
+      <AuthScreen
+        insetsTop={insets.top}
+        onSignIn={signIn}
+        onContinueAsGuest={continueAsGuest}
+      />
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 20 }]}>
@@ -49,7 +63,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   listContent: {
-    paddingBottom: 40,
+    flexGrow: 1,
   },
 });
 

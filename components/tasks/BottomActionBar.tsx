@@ -55,7 +55,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingTop: 20,
-    borderRadius: 24,
     backgroundColor: "#FFFFFF",
   },
   bottomActionCancel: {
