@@ -1,6 +1,7 @@
 import { taskStorage } from "@/services/storageService";
 import { syncOrchestrator } from "@/services/SyncOrchestrator";
 import { Task } from "@/types";
+import { isDueThisWeek, isDueToday, isOverdue } from "@/utils/dateUtils";
 import { generateId } from "@/utils/ids";
 import { normalizeTask } from "@/utils/normalizeTask";
 
@@ -34,6 +35,7 @@ export const taskService = {
       reminder?: boolean;
       reminderAt?: number;
       priority?: "low" | "medium" | "high";
+      dueDate?: number;
     },
   ): Promise<Task> {
     const newTask = normalizeTask({
@@ -46,6 +48,7 @@ export const taskService = {
       createdAt: Date.now(),
       updatedAt: Date.now(),
       priority: options?.priority,
+      dueDate: options?.dueDate,
       syncStatus: "local",
     });
 
@@ -151,6 +154,24 @@ export const taskService = {
   async getTaskById(taskId: string): Promise<Task | null> {
     const tasks = await this.getTasks();
     return tasks.find((t) => t.id === taskId) || null;
+  },
+
+  // Get tasks due today
+  async getTasksDueToday(): Promise<Task[]> {
+    const tasks = await this.getTasks();
+    return tasks.filter((t) => isDueToday(t.dueDate));
+  },
+
+  // Get overdue tasks
+  async getOverdueTasks(): Promise<Task[]> {
+    const tasks = await this.getTasks();
+    return tasks.filter((t) => isOverdue(t.dueDate, t.completed));
+  },
+
+  // Get tasks due this week (including today)
+  async getTasksDueThisWeek(): Promise<Task[]> {
+    const tasks = await this.getTasks();
+    return tasks.filter((t) => isDueThisWeek(t.dueDate));
   },
 
   // Get pending tasks count

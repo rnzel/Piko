@@ -1,15 +1,18 @@
+import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { taskService } from "@/services/taskService";
-import { Task, TaskFilter } from "@/types";
+import { Task } from "@/types";
+import { isDueThisWeek, isDueToday, isOverdue } from "@/utils/dateUtils";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useFocusEffect } from "@react-navigation/native";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { Alert, ScrollView, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AddTaskModal from "@/components/tasks/AddTaskModal";
 import AuthScreen from "@/components/tasks/AuthScreen";
 import BottomActionBar from "@/components/tasks/BottomActionBar";
+import TaskDetailModal from "@/components/tasks/TaskDetailModal";
 import TaskItem from "@/components/tasks/TaskItem";
 import EmptyState from "@/components/ui/EmptyState";
 import Loading from "@/components/ui/Loading";
@@ -31,26 +34,46 @@ const priorityMap = {
   low: 1,
 };
 
+// Date-based sort: overdue first, then by priority, then by dueDate, then by createdAt
 const sortTasks = (a: Task, b: Task) => {
-  const aPriority = a.priority ?? "medium"; // Fallback for safety, though normalizeTask should handle
-  const bPriority = b.priority ?? "medium"; // Fallback for safety
+  const aOverdue = isOverdue(a.dueDate, a.completed);
+  const bOverdue = isOverdue(b.dueDate, b.completed);
+
+  if (aOverdue !== bOverdue) {
+    return aOverdue ? -1 : 1;
+  }
+
+  const aPriority = a.priority ?? "medium";
+  const bPriority = b.priority ?? "medium";
 
   const priorityDiff = priorityMap[bPriority] - priorityMap[aPriority];
   if (priorityDiff !== 0) {
     return priorityDiff;
   }
+
+  // Tasks with dueDate sort before those without
+  if (a.dueDate && !b.dueDate) return -1;
+  if (!a.dueDate && b.dueDate) return 1;
+  if (a.dueDate && b.dueDate) {
+    if (a.dueDate !== b.dueDate) return a.dueDate - b.dueDate;
+  }
+
   return b.createdAt - a.createdAt;
 };
+
+type TaskFilter = "all" | "today" | "upcoming" | "completed";
 
 const TasksScreen = () => {
   const { user, isGuest, signIn, continueAsGuest } = useAuth();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState<boolean>(true);
-  const [filter, setFilter] = useState<TaskFilter>("ongoing");
+  const [filter, setFilter] = useState<TaskFilter>("all");
   const [selectedFolderId, setSelectedFolderId] = useState<string>("all");
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
-  const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [detailTask, setDetailTask] = useState<Task | null>(null);
+  const [showDetailModal, setShowDetailModal] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
   const insets = useSafeAreaInsets();
 
   const isSelectionMode = selectedTaskIds.length > 0;
@@ -74,27 +97,38 @@ const TasksScreen = () => {
     }, [loadTasks]),
   );
 
-  const folderOptions: { id: string; label: string }[] = [
-    { id: "all", label: "All" },
-    { id: "personal", label: "Personal" },
-  ];
+  // Single unified filter
+  const filteredTasks = useMemo(() => {
+    let result = tasks;
 
-  const filteredTasks = tasks.filter((task) => {
-    const matchesStatus =
-      filter === "ongoing" ? !task.completed : task.completed;
-    const matchesFolder =
-      selectedFolderId === "all"
-        ? true
-        : selectedFolderId === "personal"
-          ? !task.groupId
-          : task.groupId === selectedFolderId;
-    return matchesStatus && matchesFolder;
-  });
+    if (filter === "completed") {
+      result = result.filter((t) => t.completed);
+    } else if (filter === "today") {
+      result = result.filter(
+        (t) =>
+          !t.completed &&
+          (isDueToday(t.dueDate) || isOverdue(t.dueDate, t.completed)),
+      );
+    } else if (filter === "upcoming") {
+      result = result.filter(
+        (t) =>
+          !t.completed &&
+          isDueThisWeek(t.dueDate) &&
+          !isDueToday(t.dueDate) &&
+          !isOverdue(t.dueDate, t.completed),
+      );
+    } else {
+      // "all" — show everything
+      result = result;
+    }
 
-  const getTaskFolderLabel = (task: Task) => {
-    if (!task.groupId) return "Personal";
-    return "Personal";
-  };
+    return result;
+  }, [tasks, filter]);
+
+  const overdueCount = useMemo(
+    () => tasks.filter((t) => isOverdue(t.dueDate, t.completed)).length,
+    [tasks],
+  );
 
   const toggleTask = async (taskId: string) => {
     try {
@@ -107,6 +141,28 @@ const TasksScreen = () => {
     } catch (error) {
       console.error("Error toggling task:", error);
     }
+  };
+
+  const handleOpenDetail = (taskId: string) => {
+    const task = tasks.find((t) => t.id === taskId);
+    if (task) {
+      setDetailTask(task);
+      setShowDetailModal(true);
+    }
+  };
+
+  const handleDetailUpdated = () => {
+    loadTasks();
+  };
+
+  const handleEditTask = (task: Task) => {
+    setEditingTask(task);
+    setShowAddTaskModal(true);
+  };
+
+  const handleDeleteTask = (taskId: string) => {
+    // handled inside modal via callback
+    loadTasks();
   };
 
   const deleteTask = (taskId: string) => {
@@ -210,28 +266,42 @@ const TasksScreen = () => {
       reminderAt: number | null;
       groupId?: string;
       priority: "low" | "medium" | "high";
+      dueDate?: number;
     },
   ) => {
     try {
-      const newTask = await taskService.createTask(text, {
-        reminder: options.reminder,
-        reminderAt: options.reminderAt ?? undefined,
-        groupId: options.groupId,
-        priority: options.priority,
-      });
+      if (editingTask) {
+        // Update existing task
+        await taskService.updateTask(editingTask.id, {
+          text,
+          reminder: options.reminder,
+          reminderAt: options.reminderAt ?? undefined,
+          priority: options.priority,
+          dueDate: options.dueDate,
+        });
+      } else {
+        await taskService.createTask(text, {
+          reminder: options.reminder,
+          reminderAt: options.reminderAt ?? undefined,
+          groupId: options.groupId,
+          priority: options.priority,
+          dueDate: options.dueDate,
+        });
+      }
       setShowAddTaskModal(false);
-      setTasks((prev) => [newTask, ...prev].sort(sortTasks));
+      setEditingTask(null);
+      loadTasks();
     } catch (error) {
-      console.error("Error creating task:", error);
+      console.error("Error saving task:", error);
     }
   };
 
   const handleCloseModal = () => {
     setShowAddTaskModal(false);
+    setEditingTask(null);
   };
 
-  const pendingCount = tasks.filter((t) => !t.completed).length;
-  const completedCount = tasks.filter((t) => t.completed).length;
+  const getTaskFolderLabel = (_task: Task) => "Personal";
 
   if (!user && !isGuest) {
     return (
@@ -253,7 +323,7 @@ const TasksScreen = () => {
           <Text style={styles.subtitle}>
             {isGuest
               ? "Your tasks are saved on this device."
-              : "Let\'s get things done today."}
+              : "Let's get things done today."}
           </Text>
         </View>
         <View style={styles.headerActions}>
@@ -265,31 +335,51 @@ const TasksScreen = () => {
         </View>
       </View>
 
+      {/* Single flat filter row */}
       <View style={styles.filterContainer}>
         <View style={styles.filterRow}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {(["ongoing", "completed"] as TaskFilter[]).map((f) => (
-              <TouchableOpacity
-                key={f}
-                style={[
-                  styles.filterTab,
-                  filter === f &&
-                    (f === "completed"
-                      ? styles.filterTabActiveCompleted
-                      : styles.filterTabActiveOngoing),
-                ]}
-                onPress={() => setFilter(f)}
-              >
-                <Text
-                  style={[
-                    styles.filterTabText,
-                    filter === f && styles.filterTabTextActive,
-                  ]}
-                >
-                  {f === "ongoing" ? "Ongoing" : "Completed"}
-                </Text>
-              </TouchableOpacity>
-            ))}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={{ flex: 1 }}
+          >
+            {(["all", "today", "upcoming", "completed"] as TaskFilter[]).map(
+              (f) => {
+                const isActive = filter === f;
+                const isTodayTab = f === "today";
+                const showOverdueBadge = isTodayTab && overdueCount > 0;
+
+                return (
+                  <TouchableOpacity
+                    key={f}
+                    style={[
+                      styles.filterTab,
+                      isActive && styles.filterTabActive,
+                      showOverdueBadge && styles.filterTabOverdue,
+                    ]}
+                    onPress={() => setFilter(f)}
+                  >
+                    <Text
+                      style={[
+                        styles.filterTabText,
+                        isActive && styles.filterTabTextActive,
+                        showOverdueBadge &&
+                          isActive &&
+                          styles.filterTabTextOverdue,
+                      ]}
+                    >
+                      {f === "all"
+                        ? "All"
+                        : f === "today"
+                          ? `Today${overdueCount > 0 ? ` (${overdueCount})` : ""}`
+                          : f === "upcoming"
+                            ? "Upcoming"
+                            : "Completed"}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              },
+            )}
           </ScrollView>
         </View>
       </View>
@@ -307,43 +397,87 @@ const TasksScreen = () => {
             icon={
               filter === "completed"
                 ? "checkmark-circle-outline"
-                : "clipboard-outline"
+                : filter === "today"
+                  ? "alarm-outline"
+                  : filter === "upcoming"
+                    ? "calendar-outline"
+                    : "clipboard-outline"
             }
             title={
               filter === "completed"
-                ? "No completed tasks yet"
-                : "No ongoing tasks"
+                ? "No completed tasks"
+                : filter === "today"
+                  ? "All caught up for today!"
+                  : filter === "upcoming"
+                    ? "No tasks due this week"
+                    : "No tasks yet"
             }
             subtitle={
               filter === "completed"
                 ? "Complete some tasks to see them here"
-                : "Tap the + button to add your next task"
+                : filter === "today"
+                  ? "No tasks due today or overdue"
+                  : filter === "upcoming"
+                    ? "Add a due date to upcoming tasks"
+                    : "Tap the + button to add your next task"
             }
           />
         ) : (
-          filteredTasks.map((task) => (
-            <TaskItem
-              key={task.id}
-              task={task}
-              isSelected={selectedTaskIds.includes(task.id)}
-              isSelectionMode={isSelectionMode}
-              getTaskFolderLabel={getTaskFolderLabel}
-              formatReminderDateTime={formatReminderDateTime}
-              onPress={toggleTask}
-              onLongPress={toggleTaskSelection}
-            />
-          ))
+          <>
+            {filter === "all" && overdueCount > 0 && (
+              <View style={styles.overdueBanner}>
+                <Ionicons
+                  name="alert-circle"
+                  size={14}
+                  color={Colors.light.overdueText}
+                />
+                <Text style={styles.overdueBannerText}>
+                  {overdueCount} overdue task{overdueCount !== 1 ? "s" : ""} —
+                  tap to view
+                </Text>
+              </View>
+            )}
+            {filteredTasks.map((task) => (
+              <TaskItem
+                key={task.id}
+                task={task}
+                isSelected={selectedTaskIds.includes(task.id)}
+                isSelectionMode={isSelectionMode}
+                formatReminderDateTime={formatReminderDateTime}
+                onToggle={toggleTask}
+                onPress={handleOpenDetail}
+                onLongPress={toggleTaskSelection}
+              />
+            ))}
+          </>
         )}
       </ScrollView>
+
+      <TaskDetailModal
+        visible={showDetailModal}
+        task={detailTask}
+        onClose={() => {
+          setShowDetailModal(false);
+          setDetailTask(null);
+        }}
+        onTaskUpdated={handleDetailUpdated}
+        onEdit={handleEditTask}
+        onDelete={handleDeleteTask}
+      />
 
       <AddTaskModal
         visible={showAddTaskModal}
         onClose={handleCloseModal}
         onSave={handleModalSave}
+        preselectedDueDate={undefined}
+        editingTask={editingTask}
       />
 
       <TouchableOpacity
-        onPress={() => setShowAddTaskModal(true)}
+        onPress={() => {
+          setEditingTask(null);
+          setShowAddTaskModal(true);
+        }}
         style={[styles.floatingAddButton, { bottom: insets.bottom + 96 }]}
         activeOpacity={0.85}
       >

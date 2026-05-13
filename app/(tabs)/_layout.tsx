@@ -17,6 +17,12 @@ export default function TabLayout() {
           title: "Tasks",
         }}
       />
+      <Tabs.Screen
+        name="calendar"
+        options={{
+          title: "Calendar",
+        }}
+      />
       {/* Placeholder for the FAB in the middle, not a navigable tab */}
       <Tabs.Screen
         name="_empty"

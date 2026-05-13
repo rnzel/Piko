@@ -51,6 +51,14 @@ export const Colors = {
     border: "#E8E8E8",
     divider: "#F0F0F0",
 
+    // Due Date & Calendar
+    calendarToday: "rgba(94, 172, 218, 0.12)",
+    calendarTodayBorder: "#5EACDA",
+    overdueBackground: "#FEECEC",
+    overdueText: "#C94A4A",
+    dueToday: "#5EACDA",
+    dueTomorrow: "#7C9EBF",
+
     // Shadows
     shadow: "rgba(0, 0, 0, 0.08)",
     shadowMedium: "rgba(0, 0, 0, 0.12)",
@@ -87,6 +95,14 @@ export const Colors = {
     // Borders & Dividers
     border: "#333333",
     divider: "#2A2A2A",
+
+    // Due Date & Calendar
+    calendarToday: "rgba(94, 172, 218, 0.15)",
+    calendarTodayBorder: "#5EACDA",
+    overdueBackground: "#3D1C1C",
+    overdueText: "#EF5350",
+    dueToday: "#5EACDA",
+    dueTomorrow: "#7C9EBF",
 
     // Shadows
     shadow: "rgba(0, 0, 0, 0.3)",

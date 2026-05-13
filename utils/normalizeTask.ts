@@ -1,4 +1,5 @@
 import { Task } from "@/types";
+import { normalizeToDay } from "@/utils/dateUtils";
 
 /**
  * Authoritative normalizer for Task objects.
@@ -32,7 +33,9 @@ export const normalizeTask = (task: any): Task => {
     completedBy: task.completedBy || undefined,
     createdBy: task.createdBy || undefined,
     assignedTo: task.assignedTo || undefined,
-    dueDate: typeof task.dueDate === "number" ? task.dueDate : undefined,
+    dueDate: normalizeToDay(
+      typeof task.dueDate === "number" ? task.dueDate : undefined,
+    ),
     deleted: Boolean(task.deleted),
     lastModifiedBy: task.lastModifiedBy || undefined,
 

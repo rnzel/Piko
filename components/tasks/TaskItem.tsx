@@ -1,5 +1,6 @@
 import { Colors } from "@/constants/theme";
 import { Task } from "@/types";
+import { formatDueLabel, isDueToday, isOverdue } from "@/utils/dateUtils";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
@@ -8,8 +9,8 @@ type Props = {
   task: Task;
   isSelected: boolean;
   isSelectionMode: boolean;
-  getTaskFolderLabel: (task: Task) => string;
   formatReminderDateTime: (date: Date) => string;
+  onToggle: (taskId: string) => void;
   onPress: (taskId: string) => void;
   onLongPress: (taskId: string) => void;
 };
@@ -47,8 +48,8 @@ const TaskItem = ({
   task,
   isSelected,
   isSelectionMode,
-  getTaskFolderLabel,
   formatReminderDateTime,
+  onToggle,
   onPress,
   onLongPress,
 }: Props) => {
@@ -72,29 +73,28 @@ const TaskItem = ({
         checked: task.completed,
       }}
     >
-      <View style={styles.taskCheckbox}>
-        <Ionicons
-          name={
-            isSelectionMode
-              ? isSelected
-                ? "checkmark-circle"
-                : "ellipse-outline"
-              : task.completed
-                ? "checkmark-circle"
-                : "ellipse-outline"
-          }
-          size={24}
-          color={
-            isSelectionMode
-              ? isSelected
-                ? Colors.light.tint
-                : Colors.light.iconDefault
-              : task.completed
-                ? Colors.light.tint
-                : Colors.light.iconDefault
-          }
-        />
-      </View>
+      {/* Mini completion circle — tap to quick-toggle */}
+      <TouchableOpacity
+        style={styles.taskCheckbox}
+        onPress={(e) => {
+          e.stopPropagation?.();
+          onToggle(task.id);
+        }}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        activeOpacity={0.6}
+      >
+        <View
+          style={[
+            styles.miniCircle,
+            task.completed && styles.miniCircleCompleted,
+          ]}
+        >
+          {task.completed && (
+            <Ionicons name="checkmark" size={10} color="#FFFFFF" />
+          )}
+        </View>
+      </TouchableOpacity>
+
       <View style={styles.taskContent}>
         <Text
           style={[styles.taskText, task.completed && styles.taskTextCompleted]}
@@ -102,82 +102,128 @@ const TaskItem = ({
         >
           {task.text}
         </Text>
-        <View style={styles.taskMetaRow}>
-          <View style={styles.taskMetaBadge}>
-            <Ionicons
-              name="folder-open-outline"
-              size={12}
-              color={Colors.light.textSecondary}
-            />
-            <Text style={styles.taskMetaText} numberOfLines={1}>
-              {getTaskFolderLabel(task)}
-            </Text>
-          </View>
 
-          {task.priority && (
-            <View
-              style={[
-                styles.taskMetaBadge,
-                {
-                  backgroundColor: getPriorityStyles(task.priority)
-                    .backgroundColor,
-                  borderColor: getPriorityStyles(task.priority).borderColor,
-                },
-              ]}
-            >
-              <Text
+        {/* Meta badges — visible only when not in selection mode for cleaner look */}
+        {!isSelectionMode && (
+          <View style={styles.taskMetaRow}>
+            {task.priority && (
+              <View
                 style={[
-                  styles.taskMetaText,
-                  { color: getPriorityStyles(task.priority).textColor },
+                  styles.taskMetaBadge,
+                  {
+                    backgroundColor: getPriorityStyles(task.priority)
+                      .backgroundColor,
+                    borderColor: getPriorityStyles(task.priority).borderColor,
+                  },
                 ]}
               >
-                {task.priority.charAt(0).toUpperCase() +
-                  task.priority.slice(1) +
-                  " Priority"}
-              </Text>
-            </View>
-          )}
-
-          {task.reminderAt &&
-            (() => {
-              const now = Date.now();
-              const isOverdue = task.completed || task.reminderAt < now;
-              return (
-                <View
-                  style={{
-                    backgroundColor: isOverdue
-                      ? "rgba(239, 83, 80, 0.1)"
-                      : Colors.light.tintLight,
-                    borderColor: isOverdue
-                      ? Colors.light.error
-                      : Colors.light.tint,
-                    borderWidth: 1,
-                    borderRadius: 999,
-                    paddingVertical: 6,
-                    paddingHorizontal: 10,
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 4,
-                  }}
+                <Text
+                  style={[
+                    styles.taskMetaText,
+                    { color: getPriorityStyles(task.priority).textColor },
+                  ]}
                 >
-                  <Ionicons
-                    name={isOverdue ? "alarm" : "alarm-outline"}
-                    size={12}
-                    color={isOverdue ? Colors.light.error : Colors.light.tint}
-                  />
-                  <Text
+                  {task.priority.charAt(0).toUpperCase() +
+                    task.priority.slice(1)}
+                </Text>
+              </View>
+            )}
+
+            {/* Due Date Badge */}
+            {task.dueDate &&
+              (() => {
+                const dueLabel = formatDueLabel(task.dueDate);
+                const overdue = isOverdue(task.dueDate, task.completed);
+                const dueToday = isDueToday(task.dueDate);
+
+                let bgColor: string;
+                let textColor: string;
+
+                if (overdue) {
+                  bgColor = Colors.light.overdueBackground;
+                  textColor = Colors.light.overdueText;
+                } else if (dueToday) {
+                  bgColor = Colors.light.tintLight;
+                  textColor = Colors.light.dueToday;
+                } else {
+                  bgColor = Colors.light.card;
+                  textColor = Colors.light.textSecondary;
+                }
+
+                return (
+                  <View
                     style={{
-                      color: isOverdue ? Colors.light.error : Colors.light.tint,
-                      fontSize: 12,
+                      backgroundColor: bgColor,
+                      borderColor: textColor,
+                      borderWidth: 1,
+                      borderRadius: 999,
+                      paddingVertical: 4,
+                      paddingHorizontal: 8,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 3,
                     }}
-                    numberOfLines={1}
                   >
-                    {formatReminderDateTime(new Date(task.reminderAt))}
-                  </Text>
-                </View>
-              );
-            })()}
-        </View>
+                    <Ionicons
+                      name={overdue ? "alert-circle" : "calendar-outline"}
+                      size={10}
+                      color={textColor}
+                    />
+                    <Text
+                      style={{ color: textColor, fontSize: 11 }}
+                      numberOfLines={1}
+                    >
+                      {dueLabel}
+                    </Text>
+                  </View>
+                );
+              })()}
+
+            {task.reminderAt &&
+              (() => {
+                const now = Date.now();
+                const reminderOverdue = task.completed || task.reminderAt < now;
+                return (
+                  <View
+                    style={{
+                      backgroundColor: reminderOverdue
+                        ? "rgba(239, 83, 80, 0.1)"
+                        : Colors.light.tintLight,
+                      borderColor: reminderOverdue
+                        ? Colors.light.error
+                        : Colors.light.tint,
+                      borderWidth: 1,
+                      borderRadius: 999,
+                      paddingVertical: 4,
+                      paddingHorizontal: 8,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 3,
+                    }}
+                  >
+                    <Ionicons
+                      name={reminderOverdue ? "alarm" : "alarm-outline"}
+                      size={10}
+                      color={
+                        reminderOverdue ? Colors.light.error : Colors.light.tint
+                      }
+                    />
+                    <Text
+                      style={{
+                        color: reminderOverdue
+                          ? Colors.light.error
+                          : Colors.light.tint,
+                        fontSize: 11,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {formatReminderDateTime(new Date(task.reminderAt))}
+                    </Text>
+                  </View>
+                );
+              })()}
+          </View>
+        )}
       </View>
     </TouchableOpacity>
   );
@@ -186,7 +232,7 @@ const TaskItem = ({
 const styles = StyleSheet.create({
   taskItem: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: Colors.light.border,
@@ -199,34 +245,50 @@ const styles = StyleSheet.create({
     borderColor: Colors.light.tint,
     backgroundColor: Colors.light.tintLight,
   },
-  taskItemCompleted: { opacity: 0.6, backgroundColor: Colors.light.card },
-  taskCheckbox: { marginRight: 14 },
+  taskItemCompleted: { opacity: 0.55, backgroundColor: Colors.light.card },
+  taskCheckbox: {
+    marginRight: 12,
+    marginTop: 2,
+  },
+  miniCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: Colors.light.iconDefault,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  miniCircleCompleted: {
+    backgroundColor: Colors.light.tint,
+    borderColor: Colors.light.tint,
+  },
   taskContent: { flex: 1 },
-  taskText: { fontSize: 17, color: Colors.light.text, fontWeight: "500" },
+  taskText: { fontSize: 16, color: Colors.light.text, fontWeight: "500" },
   taskTextCompleted: {
     textDecorationLine: "line-through",
     color: Colors.light.textTertiary,
   },
   taskMetaRow: {
-    marginTop: 10,
+    marginTop: 8,
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
+    gap: 6,
   },
   taskMetaBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
+    gap: 3,
     borderRadius: 999,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
     backgroundColor: Colors.light.card,
     maxWidth: "100%",
     borderColor: Colors.light.border,
     borderWidth: 1,
   },
   taskMetaText: {
-    fontSize: 12,
+    fontSize: 11,
     color: Colors.light.textSecondary,
   },
 });

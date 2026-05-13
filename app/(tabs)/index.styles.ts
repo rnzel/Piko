@@ -16,7 +16,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: Colors.light.textSecondary,
     paddingHorizontal: 20,
   },
@@ -27,8 +27,15 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   headerActions: { flexDirection: "row", alignItems: "center", right: 20 },
-  filterContainer: { marginBottom: 20, paddingHorizontal: 20 },
-  filterRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  filterContainer: {
+    marginBottom: 16,
+    paddingHorizontal: 20,
+  },
+  filterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   filterTab: {
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -40,13 +47,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  filterTabActiveOngoing: {
+  filterTabActive: {
     backgroundColor: Colors.light.tintLight,
     borderColor: Colors.light.tint,
   },
-  filterTabActiveCompleted: {
-    backgroundColor: Colors.light.tintLight,
-    borderColor: Colors.light.tint,
+  filterTabOverdue: {
+    borderColor: Colors.light.overdueText,
   },
   filterTabText: {
     fontSize: 14,
@@ -55,24 +61,21 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
     textAlignVertical: "center",
   },
-  filterTabTextActive: { color: Colors.light.tint },
-  folderDropdown: {
-    maxWidth: 150,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    borderWidth: 1,
-    borderColor: Colors.light.tint,
-    backgroundColor: Colors.light.tint,
-    borderRadius: 24,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+  filterTabTextActive: {
+    color: Colors.light.tint,
   },
-  folderDropdownText: {
-    fontSize: 13,
-    color: "#FFFFFF",
-    fontWeight: "600",
-    maxWidth: 100,
+  filterTabTextOverdue: {
+    color: Colors.light.overdueText,
+  },
+  clearCompletedIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: Colors.light.border,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
   },
   sectionTitle: {
     fontSize: 18,
@@ -109,6 +112,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: Colors.light.tint,
+  },
+  overdueBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.light.overdueBackground,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.light.overdueText,
+  },
+  overdueBannerText: {
+    fontSize: 13,
+    color: Colors.light.overdueText,
+    fontWeight: "500",
   },
   floatingAddButton: {
     position: "absolute",

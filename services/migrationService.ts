@@ -1,5 +1,4 @@
 import { taskStorage } from "@/services/storageService";
-import { syncOrchestrator } from "@/services/SyncOrchestrator";
 import { taskService } from "@/services/taskService";
 import { Task } from "@/types";
 
@@ -87,20 +86,15 @@ export async function migrateGuestData(
       }
     }
 
-    // Save merged tasks locally first
+    // Save merged tasks locally only.
+    // Do NOT upload to Firestore here — the orchestrator is not initialized yet.
+    // After migration, AuthContext calls initializeSync(uid), which will:
+    //   1. Upload the merged local data to Firestore via _uploadLocalData
+    //   2. Sync down from Firestore via _syncDown
     await taskStorage.saveTasks(mergedTasks);
-
-    // Upload to Firestore via orchestrator
-    if (uid) {
-      await syncOrchestrator.saveTasks(mergedTasks);
-    }
 
     console.log(
       `[migrationService] Migration complete: added ${addedCount} guest tasks.`,
     );
   }
-
-  // Clear guest data after migration
-  await clearGuestData();
-  console.log(`[migrationService] Guest data cleared.`);
 }

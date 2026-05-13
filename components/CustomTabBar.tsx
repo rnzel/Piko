@@ -46,7 +46,7 @@ const CustomTabBar = ({
   }, [fetchUnread, state.index]);
 
   // Only render intended bottom-nav routes
-  const visibleRouteNames = ["index", "notifications", "profile"];
+  const visibleRouteNames = ["index", "calendar", "notifications", "profile"];
   const routes = state.routes.filter((route) =>
     visibleRouteNames.includes(route.name),
   );
@@ -96,6 +96,8 @@ const CustomTabBar = ({
             switch (routeName) {
               case "index":
                 return isFocused ? "checkbox" : "checkbox-outline";
+              case "calendar":
+                return isFocused ? "calendar" : "calendar-outline";
               case "notifications":
                 return isFocused ? "notifications" : "notifications-outline";
               case "profile":

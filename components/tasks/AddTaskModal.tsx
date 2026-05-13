@@ -1,4 +1,5 @@
 import { Colors } from "@/constants/theme";
+import { formatDueLabel } from "@/utils/dateUtils";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import DateTimePicker, {
   DateTimePickerEvent,
@@ -15,6 +16,7 @@ import {
 } from "react-native";
 
 import BottomSheet from "@/components/ui/BottomSheet";
+import { Task } from "@/types";
 
 type Props = {
   visible: boolean;
@@ -26,8 +28,12 @@ type Props = {
       reminderAt: number | null;
       groupId?: string;
       priority: "low" | "medium" | "high";
+      dueDate?: number;
     },
   ) => void;
+  /** When opened from the calendar tab, pre-fill dueDate with the selected date */
+  preselectedDueDate?: number;
+  editingTask?: Task | null;
 };
 
 const MIN_TASK_LENGTH = 3;
@@ -43,7 +49,13 @@ const formatReminderDateTime = (date: Date) => {
   });
 };
 
-const AddTaskModal = ({ visible, onClose, onSave }: Props) => {
+const AddTaskModal = ({
+  visible,
+  onClose,
+  onSave,
+  preselectedDueDate,
+  editingTask,
+}: Props) => {
   const inputRef = useRef<TextInput>(null);
   const [newTaskText, setNewTaskText] = useState("");
   const [newTaskReminder, setNewTaskReminder] = useState(false);
@@ -53,6 +65,8 @@ const AddTaskModal = ({ visible, onClose, onSave }: Props) => {
   const [selectedPriority, setSelectedPriority] = useState<
     "low" | "medium" | "high"
   >("low");
+  const [newTaskDueDate, setNewTaskDueDate] = useState<Date | null>(null);
+  const [showDueDatePicker, setShowDueDatePicker] = useState(false);
 
   const trimmedTaskText = newTaskText.trim();
   const isTaskLengthValid =
@@ -61,6 +75,24 @@ const AddTaskModal = ({ visible, onClose, onSave }: Props) => {
 
   useEffect(() => {
     if (visible) {
+      if (editingTask) {
+        setNewTaskText(editingTask.text);
+        setSelectedPriority(editingTask.priority ?? "low");
+        if (editingTask.dueDate) {
+          setNewTaskDueDate(new Date(editingTask.dueDate));
+        } else {
+          setNewTaskDueDate(null);
+        }
+        if (editingTask.reminderAt) {
+          setNewTaskReminderAt(new Date(editingTask.reminderAt));
+          setNewTaskReminder(true);
+        } else {
+          setNewTaskReminderAt(null);
+          setNewTaskReminder(false);
+        }
+      } else if (preselectedDueDate) {
+        setNewTaskDueDate(new Date(preselectedDueDate));
+      }
       setTimeout(() => {
         inputRef.current?.focus();
       }, 200);
@@ -70,9 +102,11 @@ const AddTaskModal = ({ visible, onClose, onSave }: Props) => {
       setNewTaskReminderAt(null);
       setShowReminderDatePicker(false);
       setShowReminderTimePicker(false);
+      setShowDueDatePicker(false);
       setSelectedPriority("low");
+      setNewTaskDueDate(null);
     }
-  }, [visible]);
+  }, [visible, preselectedDueDate, editingTask]);
 
   const onReminderDateChange = (
     event: DateTimePickerEvent,
@@ -109,8 +143,25 @@ const AddTaskModal = ({ visible, onClose, onSave }: Props) => {
     setNewTaskReminder(true);
   };
 
+  const onDueDateChange = (event: DateTimePickerEvent, selected?: Date) => {
+    setShowDueDatePicker(false);
+
+    if (event.type !== "set" || !selected) {
+      return;
+    }
+
+    // Normalize to start-of-day
+    const startOfDay = new Date(selected);
+    startOfDay.setHours(0, 0, 0, 0);
+    setNewTaskDueDate(startOfDay);
+  };
+
   const openReminderPicker = () => {
     setShowReminderDatePicker(true);
+  };
+
+  const openDueDatePicker = () => {
+    setShowDueDatePicker(true);
   };
 
   const handleClose = (force = false) => {
@@ -149,6 +200,7 @@ const AddTaskModal = ({ visible, onClose, onSave }: Props) => {
       reminderAt: newTaskReminderAt?.getTime() ?? null,
       groupId: undefined,
       priority: selectedPriority,
+      dueDate: newTaskDueDate?.getTime() ?? undefined,
     });
     handleClose(true);
   };
@@ -194,12 +246,22 @@ const AddTaskModal = ({ visible, onClose, onSave }: Props) => {
     return { buttonStyle, textStyle };
   };
 
+  const getDueDateLabel = (): string => {
+    if (!newTaskDueDate) return "Add Due Date";
+    return formatDueLabel(newTaskDueDate.getTime());
+  };
+
+  const getDueDateIconColor = (): string => {
+    if (!newTaskDueDate) return Colors.light.iconDefault;
+    return Colors.light.tint;
+  };
+
   return (
     <>
       <BottomSheet
         visible={visible}
         onClose={() => handleClose()}
-        title="New Task"
+        title={editingTask ? "Edit Task" : "New Task"}
       >
         <View style={styles.modalInputCard}>
           <TextInput
@@ -243,6 +305,54 @@ const AddTaskModal = ({ visible, onClose, onSave }: Props) => {
           })}
         </View>
 
+        {/* Due Date Row */}
+        <Text style={styles.modalLabel}>Due Date</Text>
+        <View style={styles.modalActionRow}>
+          <TouchableOpacity
+            style={[
+              styles.modalReminderButton,
+              newTaskDueDate && styles.modalReminderButtonActive,
+            ]}
+            onPress={openDueDatePicker}
+            activeOpacity={0.7}
+          >
+            <View style={styles.modalReminderButtonLeft}>
+              <Ionicons
+                name="calendar-outline"
+                size={18}
+                color={getDueDateIconColor()}
+              />
+              <Text
+                style={[
+                  styles.modalReminderButtonText,
+                  newTaskDueDate && styles.modalReminderButtonTextActive,
+                ]}
+                numberOfLines={1}
+              >
+                {getDueDateLabel()}
+              </Text>
+            </View>
+
+            {newTaskDueDate && (
+              <TouchableOpacity
+                style={styles.modalReminderClearIconButton}
+                onPress={() => {
+                  setNewTaskDueDate(null);
+                }}
+                hitSlop={{ top: 8, right: 8, bottom: 8, left: 8 }}
+              >
+                <Ionicons
+                  name="close"
+                  size={14}
+                  color={Colors.light.textSecondary}
+                />
+              </TouchableOpacity>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Reminder Row */}
+        <Text style={styles.modalLabel}>Reminder</Text>
         <View style={styles.modalActionRow}>
           <TouchableOpacity
             style={[
@@ -322,6 +432,15 @@ const AddTaskModal = ({ visible, onClose, onSave }: Props) => {
           onChange={onReminderTimeChange}
         />
       )}
+
+      {showDueDatePicker && (
+        <DateTimePicker
+          value={newTaskDueDate ?? new Date()}
+          mode="date"
+          display="default"
+          onChange={onDueDateChange}
+        />
+      )}
     </>
   );
 };
@@ -370,7 +489,8 @@ const styles = StyleSheet.create({
     color: Colors.light.textSecondary,
   },
   modalActionRow: {
-    marginTop: 12,
+    marginTop: 4,
+    marginBottom: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
