@@ -2,7 +2,12 @@ import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
 import { taskService } from "@/services/taskService";
 import { Task } from "@/types";
-import { isDueThisWeek, isDueToday, isOverdue } from "@/utils/dateUtils";
+import {
+  formatReminderDateTime,
+  isDueThisWeek,
+  isDueToday,
+  isOverdue,
+} from "@/utils/dateUtils";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useMemo, useState } from "react";
@@ -17,16 +22,6 @@ import TaskItem from "@/components/tasks/TaskItem";
 import EmptyState from "@/components/ui/EmptyState";
 import Loading from "@/components/ui/Loading";
 import styles from "./index.styles";
-
-const formatReminderDateTime = (date: Date) => {
-  return date.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-};
 
 const priorityMap = {
   high: 3,

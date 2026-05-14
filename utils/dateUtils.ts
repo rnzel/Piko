@@ -132,3 +132,17 @@ export const fromCalendarDateString = (dateString: string): Date => {
 export const getTodayCalendarString = (): string => {
   return toCalendarDateString(getStartOfTodayMs())!;
 };
+
+/**
+ * Formats a timestamp into a human-readable date-time string.
+ * Example: "May 15, 2024, 3:30 PM"
+ */
+export const formatReminderDateTime = (date: Date): string => {
+  return date.toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};

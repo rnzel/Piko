@@ -24,6 +24,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { Alert } from "react-native";
@@ -282,6 +283,13 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setSyncState(SyncState.READY); // Guest mode is always READY locally
   }, [setSyncState]);
 
+  // Ref to track syncState without stale closures in the onAuthStateChanged listener
+  const syncStateRef = useRef(syncState);
+  syncStateRef.current = syncState;
+  // Ref to track isGuest without stale closures
+  const isGuestRef = useRef(isGuest);
+  isGuestRef.current = isGuest;
+
   useEffect(() => {
     notificationService
       .requestPermissions()
@@ -350,11 +358,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
         setUser(userProfile);
         setIsGuest(false);
+
+        // Use refs to avoid stale closures — read the latest syncState/isGuest values
+        const currentSyncState = syncStateRef.current;
+        const currentIsGuest = isGuestRef.current;
+
         // If we are already mid-sync (e.g., from signIn flow), don't re-initialize.
         // Otherwise, this is a fresh app start with an existing authenticated session.
         if (
-          syncState === SyncState.IDLE ||
-          syncState === SyncState.AUTHENTICATING
+          currentSyncState === SyncState.IDLE ||
+          currentSyncState === SyncState.AUTHENTICATING
         ) {
           await initializeSync(firebaseUser.uid);
         } else {
@@ -366,7 +379,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.log(
           "[AuthContext] User signed out or no user detected via onAuthStateChanged.",
         );
-        if (!isGuest) {
+        const currentIsGuest = isGuestRef.current;
+        if (!currentIsGuest) {
           setUser(null);
           setSyncState(SyncState.IDLE);
         }
@@ -383,7 +397,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       subscriber();
       syncOrchestrator.deinitialize(); // Ensure realtime listeners are unsubscribed
     };
-  }, [isGuest, initializeSync, syncState]);
+  }, [isGuest, initializeSync]); // Removed syncState from deps — uses ref instead
 
   const contextValue = useMemo(
     () => ({

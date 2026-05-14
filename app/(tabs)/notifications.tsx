@@ -60,17 +60,9 @@ const NotificationsScreen = () => {
     }
   }, []);
 
+  // Load notifications on mount
   React.useEffect(() => {
     loadNotifications();
-  }, [loadNotifications]);
-
-  // Refresh on focus
-  React.useEffect(() => {
-    const unsubscribe = () => {
-      loadNotifications();
-    };
-    loadNotifications();
-    return unsubscribe;
   }, [loadNotifications]);
 
   const handleRefresh = useCallback(async () => {

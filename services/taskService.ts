@@ -143,11 +143,13 @@ export const taskService = {
     await syncOrchestrator.deleteTasks(taskIds);
   },
 
-  // Delete completed tasks
+  // Delete completed tasks — uses batch delete to avoid overwriting remote
   async deleteCompletedTasks(): Promise<void> {
     const tasks = await this.getTasks();
-    const pendingTasks = tasks.filter((t) => !t.completed);
-    await syncOrchestrator.saveTasks(pendingTasks);
+    const completedTaskIds = tasks.filter((t) => t.completed).map((t) => t.id);
+    if (completedTaskIds.length > 0) {
+      await syncOrchestrator.deleteTasks(completedTaskIds);
+    }
   },
 
   // Get task by ID

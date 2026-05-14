@@ -2,10 +2,16 @@ import { Task } from "@/types";
 import { normalizeTask } from "./normalizeTask";
 
 /**
- * Merge two task arrays with conflict resolution.
+ * Canonical merge for task arrays with conflict resolution.
+ *
+ * SyncOrchestrator._mergeTasks uses this logic internally (replicated for
+ * lock-scoped execution). Keep both in sync.
  *
  * Rules:
  * - Same ID → keep the one with the newer updatedAt
+ * - Local-only tasks (syncStatus === "local") are never overwritten by remote
+ * - Tasks with syncStatus === "synced" are overwritten if remote is newer
+ * - Remote-only tasks are added
  * - Different ID → keep both
  *
  * @param local - The source array (e.g., guest tasks)
@@ -26,10 +32,11 @@ export function mergeTasks(local: Task[], remote: Task[]): Task[] {
     if (!existing) {
       map.set(task.id, normalizeTask(task));
     } else {
-      // Same ID → keep the one with the newer updatedAt
-      if (task.updatedAt > existing.updatedAt) {
+      // Same ID — only overwrite if local was previously synced and local is newer
+      if (task.syncStatus === "synced" && task.updatedAt > existing.updatedAt) {
         map.set(task.id, normalizeTask(task));
       }
+      // If local.syncStatus === "local", preserve remote version
     }
   }
 

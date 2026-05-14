@@ -1,5 +1,5 @@
 import { Colors } from "@/constants/theme";
-import { formatDueLabel } from "@/utils/dateUtils";
+import { formatDueLabel, formatReminderDateTime } from "@/utils/dateUtils";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import DateTimePicker, {
   DateTimePickerEvent,
@@ -38,16 +38,6 @@ type Props = {
 
 const MIN_TASK_LENGTH = 3;
 const MAX_TASK_LENGTH = 120;
-
-const formatReminderDateTime = (date: Date) => {
-  return date.toLocaleString([], {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-};
 
 const AddTaskModal = ({
   visible,

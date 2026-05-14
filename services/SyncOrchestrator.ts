@@ -72,8 +72,15 @@ class Mutex {
   release(): void {
     const next = this._queue.shift();
     if (next) {
-      this._locked = true;
-      next();
+      // Keep locked and hand off to next waiter
+      // Wrap in try to prevent deadlock if next() throws
+      try {
+        next();
+      } catch (e) {
+        // If next throws, we must still release for subsequent waiters
+        this.release();
+        throw e;
+      }
     } else {
       this._locked = false;
     }
@@ -432,19 +439,33 @@ class SyncOrchestrator {
     // Build a set of remote task IDs for fast lookup
     const remoteIds = new Set(remoteTasks.map((t) => t.id));
 
+    // Phase 1: Merge remote tasks into local map (newer wins)
+    // Local-only tasks that have never been uploaded (syncStatus === "local")
+    // are NEVER overwritten by remote data, protecting offline-created tasks.
     for (const rt of remoteTasks) {
       const local = localMap.get(rt.id);
-      if (!local || rt.updatedAt >= local.updatedAt) {
+      if (!local) {
+        // Remote task not present locally — add it
         localMap.set(rt.id, rt);
+      } else if (
+        local.syncStatus === "synced" ||
+        local.syncStatus === "conflict"
+      ) {
+        // Only overwrite if the task was previously synced (i.e., remote knows about it)
+        // and remote is newer
+        if (rt.updatedAt >= local.updatedAt) {
+          localMap.set(rt.id, { ...rt, syncStatus: "synced" });
+        }
       }
+      // If local.syncStatus === "local", preserve local version — it hasn't been uploaded yet
     }
 
-    // Remove local tasks that are not present in the remote set.
-    // Remote snapshot already excludes tasks marked as `deleted: true`,
-    // so any local task missing from the remote set was deleted and
-    // should be removed locally as well.
-    for (const [localId] of localMap) {
-      if (!remoteIds.has(localId)) {
+    // Phase 2: Remove local tasks that were previously synced but are now absent from remote.
+    // This handles the case where another device deleted a synced task.
+    // CRITICALLY: Local-only tasks (syncStatus === "local") are NEVER removed,
+    // preventing data loss of offline-created tasks.
+    for (const [localId, localTask] of localMap) {
+      if (!remoteIds.has(localId) && localTask.syncStatus === "synced") {
         localMap.delete(localId);
       }
     }

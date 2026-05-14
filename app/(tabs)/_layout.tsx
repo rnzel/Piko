@@ -23,14 +23,6 @@ export default function TabLayout() {
           title: "Calendar",
         }}
       />
-      {/* Placeholder for the FAB in the middle, not a navigable tab */}
-      <Tabs.Screen
-        name="_empty"
-        options={{
-          title: "",
-          href: null,
-        }}
-      />
       <Tabs.Screen
         name="notifications"
         options={{

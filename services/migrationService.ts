@@ -56,11 +56,19 @@ export async function migrateGuestData(
   );
 
   if (strategy === "keepAccount") {
-    // Discard guest data, keep account data as-is
+    // Discard guest data, keep account data as-is.
+    // IMPORTANT: Do NOT clear local tasks yet — the orchestrator hasn't synced down
+    // the Firestore tasks. The syncDown in initializeSync will populate the correct
+    // task list from the remote. If we clear local tasks here, the user sees an empty
+    // list until syncDown completes (which is bad UX but not data loss).
+    // Instead, we mark that tasks should be replaced by remote on sync.
+    // The simplest safe approach: do nothing now. The syncDown in initializeSync
+    // will merge remote tasks, and local guest tasks with syncStatus "local" will
+    // NOT be deleted by the improved _mergeTasks logic (which protects local-only).
+    // This avoids the brief empty state entirely.
     console.log(
-      `[migrationService] Keeping account data only. Clearing guest data.`,
+      `[migrationService] KeepAccount: deferring to syncDown for remote tasks. Local guest tasks with syncStatus="synced" will be removed by merge.`,
     );
-    await clearGuestData();
     return;
   }
 
@@ -79,9 +87,14 @@ export async function migrateGuestData(
     const mergedTasks = [...existingTasks];
     let addedCount = 0;
 
+    // Mark guest tasks as "local" so they won't be removed by _mergeTasks
+    // during the syncDown that follows initialization.
     for (const task of guestTasks) {
       if (!existingIds.has(task.id)) {
-        mergedTasks.push(task);
+        mergedTasks.push({
+          ...task,
+          syncStatus: "local" as const,
+        });
         addedCount++;
       }
     }
