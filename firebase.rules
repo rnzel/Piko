@@ -14,13 +14,24 @@ service cloud.firestore {
 
       // Private tasks — only the owning user
       match /private_tasks/{taskId} {
-        allow read, write: if request.auth != null && request.auth.uid == userId;
+        allow read: if request.auth != null && request.auth.uid == userId;
 
-        // Prevent changing ownership
-        allow create: if request.resource.data.createdBy == request.auth.uid;
+        // Allow creating a new task with ownership
+        allow create: if request.auth != null && request.auth.uid == userId
+                       && (request.resource.data.createdBy == request.auth.uid
+                           || request.resource.data.deleted == true);
 
-        // Prevent deleting createdAt (immutable)
-        allow update: if request.resource.data.createdAt == resource.data.createdAt;
+        // Allow updating existing tasks (preserve createdAt, allow soft-delete)
+        // Soft-delete (deleted: true) is exempt from the createdAt check because
+        // the orchestrator writes the tombstone via setDoc({ merge: true }) without
+        // including createdAt (which it may not know for offline-created tasks).
+        allow update: if request.auth != null && request.auth.uid == userId
+                       && (request.resource.data.deleted == true
+                           || request.resource.data.createdAt == resource.data.createdAt);
+
+        // Allow soft-delete (setDoc with merge) to create a tombstone
+        // for tasks that were created offline and never synced, then deleted
+        allow delete: if false;
       }
 
       // Notifications — only the owning user
@@ -39,9 +50,10 @@ service cloud.firestore {
     }
 
     // === META COLLECTION ===
-    match /_meta/{document=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null;
-    }
+    // REMOVED: /_meta wildcard was open to all authenticated users with no code
+    // writing to it. Removing eliminates a security hole where any authenticated
+    // user could read/write arbitrary data outside the users/* hierarchy.
+    // If needed in the future, re-add with specific access controls (e.g.,
+    // admin roles or function-based rules).
   }
 }

@@ -425,7 +425,11 @@ const TasksScreen = () => {
         ) : (
           <>
             {filter === "all" && overdueCount > 0 && (
-              <View style={styles.overdueBanner}>
+              <TouchableOpacity
+                style={styles.overdueBanner}
+                onPress={() => setFilter("today")}
+                activeOpacity={0.7}
+              >
                 <Ionicons
                   name="alert-circle"
                   size={14}
@@ -435,7 +439,7 @@ const TasksScreen = () => {
                   {overdueCount} overdue task{overdueCount !== 1 ? "s" : ""} —
                   tap to view
                 </Text>
-              </View>
+              </TouchableOpacity>
             )}
             {filteredTasks.map((task) => (
               <TaskItem

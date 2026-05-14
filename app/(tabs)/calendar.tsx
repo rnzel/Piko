@@ -1,4 +1,5 @@
 import { Colors } from "@/constants/theme";
+import { useAuth } from "@/contexts/AuthContext";
 import { taskService } from "@/services/taskService";
 import { Task } from "@/types";
 import {
@@ -14,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import DayTasksModal from "@/components/calendar/DayTasksModal";
 import AddTaskModal from "@/components/tasks/AddTaskModal";
+import AuthScreen from "@/components/tasks/AuthScreen";
 
 const priorityDotColors: Record<string, string> = {
   high: Colors.light.priorityHighText,
@@ -24,6 +26,7 @@ const priorityDotColors: Record<string, string> = {
 const { width: screenWidth } = Dimensions.get("window");
 
 const CalendarScreen = () => {
+  const { user, isGuest, signIn, continueAsGuest } = useAuth();
   const insets = useSafeAreaInsets();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
@@ -137,6 +140,16 @@ const CalendarScreen = () => {
   };
 
   const today = getTodayCalendarString();
+
+  if (!user && !isGuest) {
+    return (
+      <AuthScreen
+        insetsTop={insets.top}
+        onSignIn={signIn}
+        onContinueAsGuest={continueAsGuest}
+      />
+    );
+  }
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + 20 }]}>

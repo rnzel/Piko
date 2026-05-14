@@ -1,14 +1,16 @@
 import AuthScreen from "@/components/tasks/AuthScreen";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
+import notificationService from "@/services/notificationService";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
   Dimensions,
   Image,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -20,6 +22,29 @@ const { width } = Dimensions.get("window");
 const ProfileScreen = () => {
   const { user, isGuest, signIn, signOut, continueAsGuest } = useAuth();
   const insets = useSafeAreaInsets();
+  const [prefs, setPrefs] = useState({ sound: true, vibrate: true });
+
+  useEffect(() => {
+    notificationService.getPreferences().then(setPrefs);
+  }, []);
+
+  const handleToggleSound = useCallback(
+    (value: boolean) => {
+      const next = { ...prefs, sound: value };
+      setPrefs(next);
+      notificationService.setPreferences(next);
+    },
+    [prefs],
+  );
+
+  const handleToggleVibrate = useCallback(
+    (value: boolean) => {
+      const next = { ...prefs, vibrate: value };
+      setPrefs(next);
+      notificationService.setPreferences(next);
+    },
+    [prefs],
+  );
 
   const handleSignOut = () => {
     Alert.alert(
@@ -100,92 +125,81 @@ const ProfileScreen = () => {
 
         {/* Sync Status */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons
-              name="checkmark-done-circle-outline"
-              size={20}
-              color={Colors.light.success}
-            />
-            <Text style={styles.sectionTitle}>Sync Status</Text>
-          </View>
           <View style={styles.statusCard}>
-            <View style={styles.statusRow}>
-              <View style={styles.statusDot} />
-              <Text style={styles.statusText}>Synced with cloud</Text>
+            <View style={styles.statusCardContent}>
+              <View style={styles.statusTopRow}>
+                <Text style={styles.statusText}>Synced</Text>
+                <View style={styles.liveBadge}>
+                  <View style={styles.liveDot} />
+                  <Text style={styles.liveText}>Live</Text>
+                </View>
+              </View>
+              <Text style={styles.statusSubtext}>
+                Your tasks automatically sync across all your devices.
+              </Text>
             </View>
-            <Text style={styles.statusSubtext}>
-              Your tasks are automatically synced across all your devices.
-            </Text>
           </View>
         </View>
 
-        {/* Account Section */}
+        {/* Notifications Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <View style={styles.menuContainer}>
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-              <View style={styles.menuIconContainer}>
-                <Ionicons
-                  name="person-outline"
-                  size={22}
-                  color={Colors.light.iconDefault}
-                />
+          <Text style={styles.sectionTitle}>Notifications</Text>
+          <View style={styles.settingsContainer}>
+            <View style={styles.settingItem}>
+              <View style={styles.settingLeft}>
+                <View style={styles.settingIconContainer}>
+                  <Ionicons
+                    name="volume-high-outline"
+                    size={20}
+                    color={Colors.light.iconDefault}
+                  />
+                </View>
+                <View style={styles.settingTextContainer}>
+                  <Text style={styles.settingLabel}>Sound</Text>
+                  <Text style={styles.settingDescription}>
+                    Play a sound when a reminder arrives
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.menuItemText}>Edit Profile</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={Colors.light.textTertiary}
+              <Switch
+                value={prefs.sound}
+                onValueChange={handleToggleSound}
+                trackColor={{
+                  false: Colors.light.border,
+                  true: Colors.light.tintMedium,
+                }}
+                thumbColor={prefs.sound ? Colors.light.tint : "#f4f3f4"}
               />
-            </TouchableOpacity>
+            </View>
 
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-              <View style={styles.menuIconContainer}>
-                <Ionicons
-                  name="notifications-outline"
-                  size={22}
-                  color={Colors.light.iconDefault}
-                />
-              </View>
-              <Text style={styles.menuItemText}>Notifications</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={Colors.light.textTertiary}
-              />
-            </TouchableOpacity>
+            <View style={styles.settingDivider} />
 
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-              <View style={styles.menuIconContainer}>
-                <Ionicons
-                  name="lock-closed-outline"
-                  size={22}
-                  color={Colors.light.iconDefault}
-                />
+            <View style={styles.settingItem}>
+              <View style={styles.settingLeft}>
+                <View style={styles.settingIconContainer}>
+                  <Ionicons
+                    name="notifications-outline"
+                    size={20}
+                    color={Colors.light.iconDefault}
+                  />
+                </View>
+                <View style={styles.settingTextContainer}>
+                  <Text style={styles.settingLabel}>Vibrate</Text>
+                  <Text style={styles.settingDescription}>
+                    Vibrate the device on notification
+                  </Text>
+                </View>
               </View>
-              <Text style={styles.menuItemText}>Privacy & Security</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={Colors.light.textTertiary}
+              <Switch
+                value={prefs.vibrate}
+                onValueChange={handleToggleVibrate}
+                trackColor={{
+                  false: Colors.light.border,
+                  true: Colors.light.tintMedium,
+                }}
+                thumbColor={prefs.vibrate ? Colors.light.tint : "#f4f3f4"}
               />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-              <View style={styles.menuIconContainer}>
-                <Ionicons
-                  name="help-circle-outline"
-                  size={22}
-                  color={Colors.light.iconDefault}
-                />
-              </View>
-              <Text style={styles.menuItemText}>Help & Support</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={Colors.light.textTertiary}
-              />
-            </TouchableOpacity>
+            </View>
           </View>
         </View>
 
@@ -193,38 +207,6 @@ const ProfileScreen = () => {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>App</Text>
           <View style={styles.menuContainer}>
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-              <View style={styles.menuIconContainer}>
-                <Ionicons
-                  name="color-palette-outline"
-                  size={22}
-                  color={Colors.light.iconDefault}
-                />
-              </View>
-              <Text style={styles.menuItemText}>Appearance</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={Colors.light.textTertiary}
-              />
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
-              <View style={styles.menuIconContainer}>
-                <Ionicons
-                  name="language-outline"
-                  size={22}
-                  color={Colors.light.iconDefault}
-                />
-              </View>
-              <Text style={styles.menuItemText}>Language</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color={Colors.light.textTertiary}
-              />
-            </TouchableOpacity>
-
             <TouchableOpacity style={styles.menuItem} activeOpacity={0.7}>
               <View style={styles.menuIconContainer}>
                 <Ionicons
@@ -361,7 +343,7 @@ const styles = StyleSheet.create({
     width: 16,
     height: 16,
     borderRadius: 8,
-    backgroundColor: Colors.light.success,
+    backgroundColor: Colors.light.tint,
     borderWidth: 3,
     borderColor: Colors.light.background,
   },
@@ -378,12 +360,6 @@ const styles = StyleSheet.create({
   section: {
     marginBottom: 28,
   },
-  sectionHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 12,
-    gap: 8,
-  },
   sectionTitle: {
     fontSize: 13,
     fontWeight: "600",
@@ -393,36 +369,109 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   statusCard: {
+    borderColor: Colors.light.border,
+    borderWidth: 1,
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
     padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  statusCardContent: {
+    flex: 1,
+  },
+  statusTopRow: {
+    justifyContent: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 4,
+    gap: 10,
+  },
+  statusText: {
+    textAlign: "center",
+    fontSize: 16,
+    fontWeight: "600",
+    color: Colors.light.text,
+  },
+  liveBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: Colors.light.tintLight,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 20,
+    gap: 5,
+  },
+  liveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: Colors.light.tint,
+  },
+  liveText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: Colors.light.tint,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  statusSubtext: {
+    justifyContent: "center",
+    textAlign: "center",
+    fontSize: 13,
+    color: Colors.light.textSecondary,
+    lineHeight: 20,
+  },
+  settingsContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    overflow: "hidden",
     shadowColor: Colors.light.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
   },
-  statusRow: {
+  settingItem: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    justifyContent: "space-between",
+    paddingVertical: 16,
+    paddingHorizontal: 16,
   },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: Colors.light.success,
-    marginRight: 10,
+  settingLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+    marginRight: 12,
   },
-  statusText: {
+  settingIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: Colors.light.card,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  settingTextContainer: {
+    flex: 1,
+  },
+  settingLabel: {
     fontSize: 16,
-    fontWeight: "600",
-    color: Colors.light.success,
+    fontWeight: "500",
+    color: Colors.light.text,
+    marginBottom: 2,
   },
-  statusSubtext: {
-    fontSize: 13,
+  settingDescription: {
+    fontSize: 12,
     color: Colors.light.textSecondary,
-    lineHeight: 20,
+    lineHeight: 16,
+  },
+  settingDivider: {
+    height: 1,
+    backgroundColor: Colors.light.divider,
+    marginHorizontal: 16,
   },
   menuContainer: {
     backgroundColor: "#FFFFFF",

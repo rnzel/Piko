@@ -106,6 +106,7 @@ export const notificationService = {
 
   // Schedule a local reminder for a task id at a unix timestamp (ms)
   // Also creates a persistent in-app notification record.
+  // Respects user's sound and vibrate preferences automatically.
   async scheduleReminder(
     taskId: string,
     timestamp: number,
@@ -116,11 +117,16 @@ export const notificationService = {
       const now = Date.now();
       const triggerDate = new Date(Math.max(timestamp, now + 1000));
 
+      // Read user preferences — no refresh needed, reads fresh from storage
+      const prefs = await this.getPreferences();
+
       const scheduledId = await Notifications.scheduleNotificationAsync({
         content: {
           title: "Task Reminder",
           body: taskText || "You have a task reminder.",
           data: { taskId },
+          sound: prefs.sound ? undefined : false,
+          ...(prefs.vibrate ? {} : { vibrate: 0 as any }),
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE as string,
@@ -144,6 +150,33 @@ export const notificationService = {
       );
     } catch (e) {
       console.error("[notificationService] scheduleReminder error", e);
+    }
+  },
+
+  // Get notification preferences (sound, vibrate)
+  async getPreferences(): Promise<{ sound: boolean; vibrate: boolean }> {
+    try {
+      const json = await AsyncStorage.getItem("@piko_notification_prefs");
+      if (json) return JSON.parse(json);
+      return { sound: true, vibrate: true };
+    } catch (e) {
+      console.error("[notificationService] getPreferences error", e);
+      return { sound: true, vibrate: true };
+    }
+  },
+
+  // Save notification preferences
+  async setPreferences(prefs: {
+    sound: boolean;
+    vibrate: boolean;
+  }): Promise<void> {
+    try {
+      await AsyncStorage.setItem(
+        "@piko_notification_prefs",
+        JSON.stringify(prefs),
+      );
+    } catch (e) {
+      console.error("[notificationService] setPreferences error", e);
     }
   },
 

@@ -1,4 +1,8 @@
-import { taskStorage, userStorage } from "@/services/storageService";
+import {
+  pendingDeleteStorage,
+  taskStorage,
+  userStorage,
+} from "@/services/storageService";
 import { SyncState, Task } from "@/types";
 import { normalizeTask } from "@/utils/normalizeTask";
 // Modular Firebase imports
@@ -12,7 +16,6 @@ import {
   getFirestore,
   onSnapshot,
   setDoc,
-  updateDoc,
   writeBatch,
 } from "@react-native-firebase/firestore";
 import { sanitizeForFirestore } from "./serialization";
@@ -246,6 +249,16 @@ class SyncOrchestrator {
         // Continue even if syncDown fails
       }
 
+      // Process any pending deletes that were queued while offline
+      try {
+        await this._processPendingDeletes();
+      } catch (pendingError) {
+        console.warn(
+          `[SyncOrchestrator] _processPendingDeletes failed:`,
+          pendingError,
+        );
+      }
+
       if (signal.aborted) return;
 
       // Step 4: Attach realtime listeners
@@ -466,6 +479,17 @@ class SyncOrchestrator {
         if (remoteTasks.length > 0 || snapshot.docChanges().length > 0) {
           await this._mergeTasks(remoteTasks);
         }
+
+        // After each remote sync, try to process any queued pending deletes.
+        // This ensures offline deletes are eventually retried when connectivity returns.
+        try {
+          await this._processPendingDeletes();
+        } catch (pendingError) {
+          console.warn(
+            `[SyncOrchestrator] _processPendingDeletes after onSnapshot failed:`,
+            pendingError,
+          );
+        }
       },
       (error) =>
         console.error(`[SyncOrchestrator] Realtime tasks error:`, error),
@@ -476,6 +500,66 @@ class SyncOrchestrator {
     if (this._taskUnsubscribe) {
       this._taskUnsubscribe();
       this._taskUnsubscribe = null;
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────
+  // Pending deletes processing
+  // ──────────────────────────────────────────────────────────
+
+  /**
+   * Process any pending deletes that were queued while offline.
+   * Retries marking them as deleted in Firestore.
+   */
+  private async _processPendingDeletes(): Promise<void> {
+    const pendingIds = await pendingDeleteStorage.getPendingDeleteIds();
+    if (pendingIds.length === 0) {
+      return;
+    }
+
+    console.log(
+      `[SyncOrchestrator] Processing ${pendingIds.length} pending deletes...`,
+    );
+
+    if (!this._uid) {
+      console.log(`[SyncOrchestrator] No UID set, skipping pending deletes.`);
+      return;
+    }
+
+    const successfullyDeleted: string[] = [];
+    for (const taskId of pendingIds) {
+      try {
+        const taskDocRef = getDocRef(userPrivateTasksPath(this._uid), taskId);
+        await setDoc(
+          taskDocRef,
+          sanitizeForFirestore({
+            deleted: true,
+            updatedAt: Date.now(),
+            lastModifiedBy: this._uid,
+          }),
+          { merge: true },
+        );
+        successfullyDeleted.push(taskId);
+        console.log(
+          `[SyncOrchestrator] Pending delete processed for task: ${taskId}`,
+        );
+      } catch (e) {
+        console.warn(
+          `[SyncOrchestrator] Failed to process pending delete for task ${taskId}, will retry later:`,
+          e,
+        );
+      }
+    }
+
+    // Remove successfully synced deletes from the queue
+    for (const taskId of successfullyDeleted) {
+      await pendingDeleteStorage.removePendingDeleteId(taskId);
+    }
+
+    if (successfullyDeleted.length > 0) {
+      console.log(
+        `[SyncOrchestrator] Processed ${successfullyDeleted.length}/${pendingIds.length} pending deletes.`,
+      );
     }
   }
 
@@ -549,23 +633,36 @@ class SyncOrchestrator {
     console.log(`[SyncOrchestrator] deleteTask: ${taskId}`);
     await taskStorage.deleteTask(taskId);
 
+    // Always try to write-through to Firestore if possible.
+    // If it fails (offline), queue for later retry.
+    let firestoreSucceeded = false;
     if (this._canWriteThrough()) {
       try {
         const taskDocRef = getDocRef(userPrivateTasksPath(this._uid!), taskId);
-        await updateDoc(
+        await setDoc(
           taskDocRef,
           sanitizeForFirestore({
             deleted: true,
             updatedAt: Date.now(),
             lastModifiedBy: this._uid,
           }),
+          { merge: true },
         );
         console.log(
           `[SyncOrchestrator] deleteTask: ${taskId} marked as deleted in Firestore.`,
         );
+        firestoreSucceeded = true;
       } catch (e) {
         console.error(`[SyncOrchestrator] deleteTask firestore error:`, e);
       }
+    }
+
+    // If write-through wasn't attempted or failed, queue for later retry
+    if (!firestoreSucceeded) {
+      console.log(
+        `[SyncOrchestrator] deleteTask: ${taskId} queued for later sync.`,
+      );
+      await pendingDeleteStorage.addPendingDeleteId(taskId);
     }
   }
 
@@ -573,6 +670,7 @@ class SyncOrchestrator {
     console.log(`[SyncOrchestrator] deleteTasks: ${taskIds.length} tasks`);
     await taskStorage.deleteTasks(taskIds);
 
+    let firestoreSucceeded = false;
     if (this._canWriteThrough()) {
       try {
         const batch = writeBatch(db);
@@ -582,21 +680,33 @@ class SyncOrchestrator {
             userPrivateTasksPath(this._uid!),
             taskId,
           );
-          batch.update(
+          batch.set(
             taskDocRef,
             sanitizeForFirestore({
               deleted: true,
               updatedAt: now,
               lastModifiedBy: this._uid,
             }),
+            { merge: true },
           );
         }
         await batch.commit();
         console.log(
           `[SyncOrchestrator] deleteTasks: ${taskIds.length} tasks marked as deleted in Firestore.`,
         );
+        firestoreSucceeded = true;
       } catch (e) {
         console.error(`[SyncOrchestrator] deleteTasks firestore error:`, e);
+      }
+    }
+
+    // If write-through wasn't attempted or failed, queue for later retry
+    if (!firestoreSucceeded) {
+      console.log(
+        `[SyncOrchestrator] deleteTasks: ${taskIds.length} tasks queued for later sync.`,
+      );
+      for (const taskId of taskIds) {
+        await pendingDeleteStorage.addPendingDeleteId(taskId);
       }
     }
   }

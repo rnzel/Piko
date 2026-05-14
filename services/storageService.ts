@@ -11,6 +11,7 @@ const STORAGE_KEYS = {
   USER: "@piko_user",
   IS_GUEST: "@piko_is_guest",
   NOTIFICATIONS: "@piko_notifications",
+  PENDING_DELETES: "@piko_pending_deletes",
 } as const;
 
 // ────────────────────────────────────────────────────────────
@@ -294,6 +295,61 @@ export const notificationStorage = {
 };
 
 // ────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────
+// Pending deletes storage (for offline deletes that need to sync)
+// ────────────────────────────────────────────────────────────
+
+export const pendingDeleteStorage = {
+  async getPendingDeleteIds(): Promise<string[]> {
+    try {
+      const json = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_DELETES);
+      return json ? JSON.parse(json) : [];
+    } catch (error) {
+      console.error("Error getting pending deletes:", error);
+      return [];
+    }
+  },
+
+  async addPendingDeleteId(taskId: string): Promise<void> {
+    try {
+      const ids = await this.getPendingDeleteIds();
+      if (!ids.includes(taskId)) {
+        ids.push(taskId);
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.PENDING_DELETES,
+          JSON.stringify(ids),
+        );
+      }
+    } catch (error) {
+      console.error("Error adding pending delete:", error);
+    }
+  },
+
+  async removePendingDeleteId(taskId: string): Promise<void> {
+    try {
+      const ids = await this.getPendingDeleteIds();
+      const filtered = ids.filter((id) => id !== taskId);
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.PENDING_DELETES,
+        JSON.stringify(filtered),
+      );
+    } catch (error) {
+      console.error("Error removing pending delete:", error);
+    }
+  },
+
+  async clearPendingDeletes(): Promise<void> {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.PENDING_DELETES,
+        JSON.stringify([]),
+      );
+    } catch (error) {
+      console.error("Error clearing pending deletes:", error);
+    }
+  },
+};
+
 // Clear all storage
 // ────────────────────────────────────────────────────────────
 
@@ -304,6 +360,7 @@ export async function clearAllStorage(): Promise<void> {
       STORAGE_KEYS.USER,
       STORAGE_KEYS.IS_GUEST,
       STORAGE_KEYS.NOTIFICATIONS,
+      STORAGE_KEYS.PENDING_DELETES,
     ]);
   } catch (error) {
     console.error("Error clearing storage:", error);
