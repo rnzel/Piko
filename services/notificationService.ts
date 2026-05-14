@@ -125,8 +125,24 @@ export const notificationService = {
           title: "Task Reminder",
           body: taskText || "You have a task reminder.",
           data: { taskId },
+          // sound: undefined → plays default sound; false → silent
           sound: prefs.sound ? undefined : false,
-          ...(prefs.vibrate ? {} : { vibrate: 0 as any }),
+          // Android-specific vibrate & channel targeting
+          // Channel must be created via setNotificationChannelAsync before scheduling.
+          ...(prefs.vibrate
+            ? ({
+                android: {
+                  channelId: "tasks",
+                  enableVibrate: true,
+                  vibrationPattern: [0, 200, 100, 200],
+                },
+              } as any)
+            : ({
+                android: {
+                  channelId: "tasks",
+                  enableVibrate: false,
+                },
+              } as any)),
         },
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE as string,

@@ -14,14 +14,42 @@ import { useColorScheme } from "@/hooks/use-color-scheme";
 import { notificationService } from "@/services/notificationService";
 
 // Configure how notifications are shown when the app is in the foreground
+// Reads user preferences dynamically for sound and vibrate behavior
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async () => {
+    try {
+      const prefs = await notificationService.getPreferences();
+      return {
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: prefs.sound,
+        shouldSetBadge: false,
+      };
+    } catch {
+      return {
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      };
+    }
+  },
 });
+
+// Create Android notification channel once at startup.
+// Channel settings (vibration, sound, importance) override per-notification payload.
+// Android caches channels aggressively — reinstall app if changes don't apply.
+// NOTE: sound is NOT set here — it's controlled per-notification in scheduleReminder()
+// via sound: undefined (system default) vs sound: false (silent).
+Notifications.setNotificationChannelAsync("tasks", {
+  name: "Task Reminders",
+  importance: Notifications.AndroidImportance.HIGH,
+  vibrationPattern: [0, 200, 100, 200],
+  enableVibrate: true,
+  lightColor: "#5E748C",
+}).catch((e) =>
+  console.warn("[RootLayout] Failed to create notification channel", e),
+);
 
 export const unstable_settings = {
   anchor: "(tabs)",
@@ -66,10 +94,6 @@ export default function RootLayout() {
       <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
         <Stack>
           <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen
-            name="modal"
-            options={{ presentation: "modal", title: "Modal" }}
-          />
         </Stack>
         <StatusBar style="auto" />
       </ThemeProvider>

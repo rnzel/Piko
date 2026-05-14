@@ -41,3 +41,22 @@ app-example
 # generated native folders
 /ios
 /android
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Firebase generated config (download per-device)
+google-services.json
+GoogleService-Info.plist
+
+# Kilo (MCP plan files)
+.kilo/
+
+# Logs
+*.log
+
+# Dependencies (OS-specific lock)
+package-lock.json
