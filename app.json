@@ -7,7 +7,6 @@
     "icon": "./assets/images/icon.png",
     "scheme": "piko",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
     },
@@ -19,7 +18,6 @@
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
-      "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.zel_01.Piko",
       "googleServicesFile": "./google-services.json"
@@ -34,7 +32,11 @@
         "expo-build-properties",
         {
           "android": {
+            "newArchEnabled": true,
             "ndkVersion": "30.0.14904198"
+          },
+          "ios": {
+            "newArchEnabled": true
           }
         }
       ],
@@ -55,11 +57,18 @@
       "@react-native-firebase/auth",
       "expo-font",
       "expo-image",
-      "expo-web-browser"
+      "expo-web-browser",
+      "@react-native-community/datetimepicker"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "00824c4f-1b1b-4aa5-83fb-db46c28cbc36"
+      }
     }
   }
 }
