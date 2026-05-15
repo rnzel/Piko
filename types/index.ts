@@ -147,6 +147,7 @@ export interface AuthState {
   signOut: () => Promise<void>;
   continueAsGuest: () => void;
   syncState: SyncState;
+  syncError?: string | null;
 }
 
 export enum SyncState {
@@ -157,6 +158,8 @@ export enum SyncState {
   HYDRATING,
   REALTIME_READY,
   READY,
+  DEGRADED,
+  ERROR,
 }
 
 // Task service types

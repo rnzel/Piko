@@ -63,7 +63,6 @@ const TasksScreen = () => {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState<boolean>(true);
   const [filter, setFilter] = useState<TaskFilter>("all");
-  const [selectedFolderId, setSelectedFolderId] = useState<string>("all");
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
   const [showAddTaskModal, setShowAddTaskModal] = useState(false);
   const [detailTask, setDetailTask] = useState<Task | null>(null);
@@ -160,26 +159,6 @@ const TasksScreen = () => {
     loadTasks();
   };
 
-  const deleteTask = (taskId: string) => {
-    Alert.alert("Delete Task", "Are you sure you want to delete this task?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await taskService.deleteTask(taskId);
-            setTasks((prev) =>
-              prev.filter((t) => t.id !== taskId).sort(sortTasks),
-            );
-          } catch (error) {
-            console.error("Error deleting task:", error);
-          }
-        },
-      },
-    ]);
-  };
-
   const toggleTaskSelection = (taskId: string) => {
     setSelectedTaskIds((prev) =>
       prev.includes(taskId)
@@ -214,39 +193,6 @@ const TasksScreen = () => {
               clearTaskSelection();
             } catch (error) {
               console.error("Error deleting selected tasks:", error);
-            }
-          },
-        },
-      ],
-    );
-  };
-
-  const deleteCompletedTasks = () => {
-    const completedCount = tasks.filter((t) => t.completed).length;
-    if (completedCount === 0) {
-      Alert.alert(
-        "No Completed Tasks",
-        "There are no completed tasks to clear.",
-      );
-      return;
-    }
-
-    Alert.alert(
-      "Clear Completed",
-      `Are you sure you want to delete ${completedCount} completed task${completedCount > 1 ? "s" : ""}?`,
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear All",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              await taskService.deleteCompletedTasks();
-              setTasks((prev) =>
-                prev.filter((t) => !t.completed).sort(sortTasks),
-              );
-            } catch (error) {
-              console.error("Error clearing completed tasks:", error);
             }
           },
         },
@@ -295,8 +241,6 @@ const TasksScreen = () => {
     setShowAddTaskModal(false);
     setEditingTask(null);
   };
-
-  const getTaskFolderLabel = (_task: Task) => "Personal";
 
   if (!user && !isGuest) {
     return (

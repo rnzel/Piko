@@ -1,7 +1,8 @@
 import AuthScreen from "@/components/tasks/AuthScreen";
 import { Colors } from "@/constants/theme";
 import { useAuth } from "@/contexts/AuthContext";
-import notificationService from "@/services/notificationService";
+import { notificationService } from "@/services/notificationService";
+import { SyncState } from "@/types";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -20,9 +21,55 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 const { width } = Dimensions.get("window");
 
 const ProfileScreen = () => {
-  const { user, isGuest, signIn, signOut, continueAsGuest } = useAuth();
+  const {
+    user,
+    isGuest,
+    signIn,
+    signOut,
+    continueAsGuest,
+    syncState,
+    syncError,
+  } = useAuth();
   const insets = useSafeAreaInsets();
   const [prefs, setPrefs] = useState({ sound: true, vibrate: true });
+
+  const syncStatusConfig = React.useMemo(() => {
+    switch (syncState) {
+      case SyncState.DEGRADED:
+        return {
+          title: "Sync degraded",
+          badge: "Retrying",
+          description:
+            syncError ||
+            "Some cloud sync operations failed. Your local data is preserved and retries will continue.",
+        };
+      case SyncState.ERROR:
+        return {
+          title: "Sync error",
+          badge: "Error",
+          description:
+            syncError ||
+            "Cloud sync is currently unavailable. Your local data remains on this device.",
+        };
+      case SyncState.AUTHENTICATING:
+      case SyncState.MIGRATING:
+      case SyncState.UPLOADING_LOCAL:
+      case SyncState.HYDRATING:
+      case SyncState.REALTIME_READY:
+        return {
+          title: "Syncing",
+          badge: "Live",
+          description: "Your tasks are syncing across devices.",
+        };
+      case SyncState.READY:
+      default:
+        return {
+          title: "Synced",
+          badge: "Live",
+          description: "Your tasks automatically sync across all your devices.",
+        };
+    }
+  }, [syncError, syncState]);
 
   useEffect(() => {
     notificationService.getPreferences().then(setPrefs);
@@ -128,14 +175,14 @@ const ProfileScreen = () => {
           <View style={styles.statusCard}>
             <View style={styles.statusCardContent}>
               <View style={styles.statusTopRow}>
-                <Text style={styles.statusText}>Synced</Text>
+                <Text style={styles.statusText}>{syncStatusConfig.title}</Text>
                 <View style={styles.liveBadge}>
                   <View style={styles.liveDot} />
-                  <Text style={styles.liveText}>Live</Text>
+                  <Text style={styles.liveText}>{syncStatusConfig.badge}</Text>
                 </View>
               </View>
               <Text style={styles.statusSubtext}>
-                Your tasks automatically sync across all your devices.
+                {syncStatusConfig.description}
               </Text>
             </View>
           </View>

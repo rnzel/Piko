@@ -1,5 +1,6 @@
 import {
   pendingDeleteStorage,
+  pendingUpsertStorage,
   taskStorage,
   userStorage,
 } from "@/services/storageService";
@@ -31,7 +32,8 @@ export enum SyncLifecycleState {
   HYDRATING = 3,
   REALTIME_READY = 4,
   READY = 5,
-  ERROR = 6,
+  DEGRADED = 6,
+  ERROR = 7,
 }
 
 // Map internal state to public SyncState for AuthContext
@@ -42,7 +44,8 @@ const stateToSyncState: Record<SyncLifecycleState, SyncState> = {
   [SyncLifecycleState.HYDRATING]: SyncState.HYDRATING,
   [SyncLifecycleState.REALTIME_READY]: SyncState.REALTIME_READY,
   [SyncLifecycleState.READY]: SyncState.READY,
-  [SyncLifecycleState.ERROR]: SyncState.IDLE,
+  [SyncLifecycleState.DEGRADED]: SyncState.DEGRADED,
+  [SyncLifecycleState.ERROR]: SyncState.ERROR,
 };
 
 // ────────────────────────────────────────────────────────────
@@ -121,6 +124,7 @@ class SyncOrchestrator {
   private _abortController: AbortController | null = null;
   private _initializationPromise: Promise<void> | null = null;
   private _listeners: Set<StateChangeListener> = new Set();
+  private _lastError: string | null = null;
 
   // Realtime listener unsubscribe functions
   private _taskUnsubscribe: (() => void) | null = null;
@@ -147,6 +151,10 @@ class SyncOrchestrator {
   /** Map internal state to public SyncState */
   get syncState(): SyncState {
     return stateToSyncState[this._state] ?? SyncState.IDLE;
+  }
+
+  get lastError(): string | null {
+    return this._lastError;
   }
 
   /**
@@ -185,6 +193,7 @@ class SyncOrchestrator {
     await this._syncLock.acquire();
     try {
       this._uid = null;
+      this._lastError = null;
       this._setState(SyncLifecycleState.IDLE);
       this._initializationPromise = null;
       console.log(`[SyncOrchestrator] Deinitialized, state: ${this._state}`);
@@ -208,6 +217,7 @@ class SyncOrchestrator {
 
   private async _initializeInternal(uid: string): Promise<void> {
     console.log(`[SyncOrchestrator] Initializing for uid: ${uid}`);
+    let encounteredRecoverableError = false;
 
     try {
       // Create new abort controller for this initialization session
@@ -237,6 +247,8 @@ class SyncOrchestrator {
         }
       } catch (uploadError) {
         console.warn(`[SyncOrchestrator] uploadLocalData failed:`, uploadError);
+        this._lastError = this._formatError(uploadError);
+        encounteredRecoverableError = true;
         // Continue even if upload fails
       }
 
@@ -253,6 +265,8 @@ class SyncOrchestrator {
         console.log(`[SyncOrchestrator] Initial syncDown complete.`);
       } catch (syncError) {
         console.warn(`[SyncOrchestrator] syncDown failed:`, syncError);
+        this._lastError = this._formatError(syncError);
+        encounteredRecoverableError = true;
         // Continue even if syncDown fails
       }
 
@@ -263,6 +277,17 @@ class SyncOrchestrator {
         console.warn(
           `[SyncOrchestrator] _processPendingDeletes failed:`,
           pendingError,
+        );
+      }
+
+      // Process any pending upserts that were queued while write-through
+      // wasn't available or previously failed.
+      try {
+        await this._processPendingUpserts();
+      } catch (pendingUpsertError) {
+        console.warn(
+          `[SyncOrchestrator] _processPendingUpserts failed:`,
+          pendingUpsertError,
         );
       }
 
@@ -281,18 +306,35 @@ class SyncOrchestrator {
 
       // Step 5: Mark as READY
       await this._syncLock.acquire();
-      this._setState(SyncLifecycleState.READY);
+      this._setState(
+        encounteredRecoverableError
+          ? SyncLifecycleState.DEGRADED
+          : SyncLifecycleState.READY,
+      );
       this._syncLock.release();
 
-      console.log(`[SyncOrchestrator] Sync lifecycle complete. System READY.`);
+      console.log(
+        `[SyncOrchestrator] Sync lifecycle complete. System ${encounteredRecoverableError ? "DEGRADED" : "READY"}.`,
+      );
     } catch (error) {
       console.error(`[SyncOrchestrator] Initialization error:`, error);
+      this._lastError = this._formatError(error);
       await this._syncLock.acquire();
       this._setState(SyncLifecycleState.ERROR);
       this._syncLock.release();
       throw error;
     } finally {
       this._initializationPromise = null;
+    }
+  }
+
+  private _formatError(error: unknown): string {
+    if (error instanceof Error) return error.message;
+    if (typeof error === "string") return error;
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "Unknown sync error";
     }
   }
 
@@ -511,6 +553,16 @@ class SyncOrchestrator {
             pendingError,
           );
         }
+
+        // Also retry queued add/update writes after remote sync events
+        try {
+          await this._processPendingUpserts();
+        } catch (pendingUpsertError) {
+          console.warn(
+            `[SyncOrchestrator] _processPendingUpserts after onSnapshot failed:`,
+            pendingUpsertError,
+          );
+        }
       },
       (error) =>
         console.error(`[SyncOrchestrator] Realtime tasks error:`, error),
@@ -584,6 +636,72 @@ class SyncOrchestrator {
     }
   }
 
+  /**
+   * Process queued add/update writes that failed earlier or happened before
+   * write-through was available.
+   */
+  private async _processPendingUpserts(): Promise<void> {
+    const pendingIds = await pendingUpsertStorage.getPendingUpsertIds();
+    if (pendingIds.length === 0) {
+      return;
+    }
+
+    if (!this._uid || !this._canWriteThrough()) {
+      console.log(
+        `[SyncOrchestrator] Skipping pending upserts: canWriteThrough=${this._canWriteThrough()} uid=${this._uid}`,
+      );
+      return;
+    }
+
+    console.log(
+      `[SyncOrchestrator] Processing ${pendingIds.length} pending upserts...`,
+    );
+
+    const localTasks = await taskStorage.getTasks();
+    const taskMap = new Map(localTasks.map((t) => [t.id, t]));
+    const successfullyUpserted: string[] = [];
+
+    for (const taskId of pendingIds) {
+      const task = taskMap.get(taskId);
+      if (!task) {
+        // Task no longer exists locally (possibly deleted) — remove from queue
+        successfullyUpserted.push(taskId);
+        continue;
+      }
+
+      try {
+        const taskDocRef = getDocRef(userPrivateTasksPath(this._uid), task.id);
+        await setDoc(
+          taskDocRef,
+          sanitizeForFirestore({
+            ...task,
+            createdBy: this._uid,
+            lastModifiedBy: this._uid,
+            syncStatus: "synced",
+            updatedAt: Date.now(),
+          }),
+          { merge: true },
+        );
+        successfullyUpserted.push(taskId);
+      } catch (e) {
+        console.warn(
+          `[SyncOrchestrator] Failed pending upsert for task ${taskId}, will retry later:`,
+          e,
+        );
+      }
+    }
+
+    for (const taskId of successfullyUpserted) {
+      await pendingUpsertStorage.removePendingUpsertId(taskId);
+    }
+
+    if (successfullyUpserted.length > 0) {
+      console.log(
+        `[SyncOrchestrator] Processed ${successfullyUpserted.length}/${pendingIds.length} pending upserts.`,
+      );
+    }
+  }
+
   // ──────────────────────────────────────────────────────────
   // Write-through eligibility check
   // ──────────────────────────────────────────────────────────
@@ -619,9 +737,19 @@ class SyncOrchestrator {
         console.log(
           `[SyncOrchestrator] addTask: ${task.id} written to Firestore.`,
         );
+        await pendingUpsertStorage.removePendingUpsertId(task.id);
       } catch (e) {
-        console.error(`[SyncOrchestrator] addTask firestore error:`, e);
+        console.error(
+          `[SyncOrchestrator] addTask firestore error (uid=${this._uid}, state=${SyncLifecycleState[this._state]}):`,
+          e,
+        );
+        await pendingUpsertStorage.addPendingUpsertId(task.id);
       }
+    } else {
+      console.log(
+        `[SyncOrchestrator] addTask queued for upsert retry (canWriteThrough=${this._canWriteThrough()}, uid=${this._uid}, state=${SyncLifecycleState[this._state]}).`,
+      );
+      await pendingUpsertStorage.addPendingUpsertId(task.id);
     }
   }
 
@@ -644,9 +772,19 @@ class SyncOrchestrator {
         console.log(
           `[SyncOrchestrator] updateTask: ${task.id} updated in Firestore.`,
         );
+        await pendingUpsertStorage.removePendingUpsertId(task.id);
       } catch (e) {
-        console.error(`[SyncOrchestrator] updateTask firestore error:`, e);
+        console.error(
+          `[SyncOrchestrator] updateTask firestore error (uid=${this._uid}, state=${SyncLifecycleState[this._state]}):`,
+          e,
+        );
+        await pendingUpsertStorage.addPendingUpsertId(task.id);
       }
+    } else {
+      console.log(
+        `[SyncOrchestrator] updateTask queued for upsert retry (canWriteThrough=${this._canWriteThrough()}, uid=${this._uid}, state=${SyncLifecycleState[this._state]}).`,
+      );
+      await pendingUpsertStorage.addPendingUpsertId(task.id);
     }
   }
 

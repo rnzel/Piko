@@ -12,6 +12,7 @@ const STORAGE_KEYS = {
   IS_GUEST: "@piko_is_guest",
   NOTIFICATIONS: "@piko_notifications",
   PENDING_DELETES: "@piko_pending_deletes",
+  PENDING_UPSERTS: "@piko_pending_upserts",
 } as const;
 
 // ────────────────────────────────────────────────────────────
@@ -350,6 +351,61 @@ export const pendingDeleteStorage = {
   },
 };
 
+// ────────────────────────────────────────────────────────────
+// Pending upserts storage (for offline add/update that need sync)
+// ────────────────────────────────────────────────────────────
+
+export const pendingUpsertStorage = {
+  async getPendingUpsertIds(): Promise<string[]> {
+    try {
+      const json = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_UPSERTS);
+      return json ? JSON.parse(json) : [];
+    } catch (error) {
+      console.error("Error getting pending upserts:", error);
+      return [];
+    }
+  },
+
+  async addPendingUpsertId(taskId: string): Promise<void> {
+    try {
+      const ids = await this.getPendingUpsertIds();
+      if (!ids.includes(taskId)) {
+        ids.push(taskId);
+        await AsyncStorage.setItem(
+          STORAGE_KEYS.PENDING_UPSERTS,
+          JSON.stringify(ids),
+        );
+      }
+    } catch (error) {
+      console.error("Error adding pending upsert:", error);
+    }
+  },
+
+  async removePendingUpsertId(taskId: string): Promise<void> {
+    try {
+      const ids = await this.getPendingUpsertIds();
+      const filtered = ids.filter((id) => id !== taskId);
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.PENDING_UPSERTS,
+        JSON.stringify(filtered),
+      );
+    } catch (error) {
+      console.error("Error removing pending upsert:", error);
+    }
+  },
+
+  async clearPendingUpserts(): Promise<void> {
+    try {
+      await AsyncStorage.setItem(
+        STORAGE_KEYS.PENDING_UPSERTS,
+        JSON.stringify([]),
+      );
+    } catch (error) {
+      console.error("Error clearing pending upserts:", error);
+    }
+  },
+};
+
 // Clear all storage
 // ────────────────────────────────────────────────────────────
 
@@ -361,9 +417,23 @@ export async function clearAllStorage(): Promise<void> {
       STORAGE_KEYS.IS_GUEST,
       STORAGE_KEYS.NOTIFICATIONS,
       STORAGE_KEYS.PENDING_DELETES,
+      STORAGE_KEYS.PENDING_UPSERTS,
     ]);
   } catch (error) {
     console.error("Error clearing storage:", error);
+  }
+}
+
+export async function clearSessionStorage(): Promise<void> {
+  try {
+    await AsyncStorage.multiRemove([
+      STORAGE_KEYS.USER,
+      STORAGE_KEYS.IS_GUEST,
+      STORAGE_KEYS.PENDING_DELETES,
+      STORAGE_KEYS.PENDING_UPSERTS,
+    ]);
+  } catch (error) {
+    console.error("Error clearing session storage:", error);
   }
 }
 

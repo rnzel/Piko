@@ -9,7 +9,7 @@ import {
 } from "@/utils/dateUtils";
 import { useFocusEffect } from "@react-navigation/native";
 import React, { useCallback, useMemo, useState } from "react";
-import { Dimensions, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { Calendar, DateData } from "react-native-calendars";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -23,13 +23,10 @@ const priorityDotColors: Record<string, string> = {
   low: Colors.light.priorityLowText,
 };
 
-const { width: screenWidth } = Dimensions.get("window");
-
 const CalendarScreen = () => {
   const { user, isGuest, signIn, continueAsGuest } = useAuth();
   const insets = useSafeAreaInsets();
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showDayTasks, setShowDayTasks] = useState(false);
   const [showAddTask, setShowAddTask] = useState(false);
@@ -38,14 +35,11 @@ const CalendarScreen = () => {
   >(undefined);
 
   const loadTasks = useCallback(async () => {
-    setLoading(true);
     try {
       const loadedTasks = await taskService.getTasks();
       setTasks(loadedTasks);
     } catch (error) {
       console.error("Error loading tasks:", error);
-    } finally {
-      setLoading(false);
     }
   }, []);
 

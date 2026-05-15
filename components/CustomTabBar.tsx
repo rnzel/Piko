@@ -3,16 +3,8 @@ import { notificationService } from "@/services/notificationService";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Dimensions,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-const { width } = Dimensions.get("window");
 
 const CustomTabBar = ({
   state,
@@ -58,19 +50,7 @@ const CustomTabBar = ({
       <View style={styles.tabBar}>
         {routes.map((route, index) => {
           const { options } = descriptors[route.key];
-          const label =
-            options.tabBarLabel !== undefined
-              ? options.tabBarLabel
-              : options.title !== undefined
-                ? options.title
-                : route.name;
-
           const isFocused = state.index === index;
-
-          // Adjust index for the empty route
-          const actualIndex = state.routes.findIndex(
-            (r) => r.name === route.name,
-          );
 
           const onPress = () => {
             const event = navigation.emit({

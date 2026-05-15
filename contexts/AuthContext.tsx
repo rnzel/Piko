@@ -1,6 +1,6 @@
 import { notificationService } from "@/services/notificationService";
 import {
-  clearAllStorage,
+  clearSessionStorage,
   guestStorage,
   userStorage,
 } from "@/services/storageService";
@@ -47,6 +47,7 @@ const AuthContext = createContext<AuthState>({
   signOut: async () => {},
   continueAsGuest: () => {},
   syncState: SyncState.IDLE,
+  syncError: null,
 });
 
 interface AuthProviderProps {
@@ -58,6 +59,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>(SyncState.IDLE);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Migration state
   const [showMigration, setShowMigration] = useState(false);
@@ -72,6 +74,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Map orchestrator state to SyncState
       const syncState = syncOrchestrator.syncState;
       setSyncState(syncState);
+      setSyncError(syncOrchestrator.lastError);
       console.log(
         `[AuthContext] SyncOrchestrator state changed to: ${SyncState[syncState]}`,
       );
@@ -85,6 +88,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signIn = useCallback(async () => {
     console.log("[AuthContext] Starting sign-in process...");
     setSyncState(SyncState.AUTHENTICATING);
+    setSyncError(null);
     try {
       await GoogleSignin.signOut();
 
@@ -153,7 +157,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       await initializeSync(uid);
     } catch (error) {
       console.error("[AuthContext] Sign-in process error:", error);
-      setSyncState(SyncState.IDLE); // Reset sync state on error
+      setSyncState(SyncState.ERROR);
+      setSyncError(error instanceof Error ? error.message : "Sign-in failed");
 
       const errorCode =
         typeof error === "object" &&
@@ -218,6 +223,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setShowMigration(false);
         setMigrationInfo(null);
         setSyncState(SyncState.IDLE);
+        setSyncError(null);
         try {
           await syncOrchestrator.deinitialize();
           await firebaseSignOut(getAuth());
@@ -244,7 +250,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         await initializeSync(uid);
       } catch (error) {
         console.error("[AuthContext] Migration failed:", error);
-        setSyncState(SyncState.IDLE); // Reset sync state on error
+        setSyncState(SyncState.ERROR);
+        setSyncError(
+          error instanceof Error ? error.message : "Migration failed",
+        );
         Alert.alert(
           "Migration Error",
           "Failed to migrate your data. Please try signing in again.",
@@ -259,11 +268,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const signOut = useCallback(async () => {
     console.log("[AuthContext] Signing out...");
     setSyncState(SyncState.IDLE); // Reset sync state on sign out
+    setSyncError(null);
     try {
       await syncOrchestrator.deinitialize();
       await firebaseSignOut(getAuth());
       await GoogleSignin.signOut();
-      await clearAllStorage();
+      await clearSessionStorage();
       setUser(null);
       setIsGuest(false);
       console.log("[AuthContext] Sign out complete.");
@@ -281,6 +291,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setIsGuest(true);
     setLoading(false);
     setSyncState(SyncState.READY); // Guest mode is always READY locally
+    setSyncError(null);
   }, [setSyncState]);
 
   // Ref to track syncState without stale closures in the onAuthStateChanged listener
@@ -311,6 +322,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setIsGuest(true);
           setLoading(false);
           setSyncState(SyncState.READY);
+          setSyncError(null);
           return;
         }
 
@@ -334,11 +346,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           );
           setIsGuest(false);
           setSyncState(SyncState.IDLE);
+          setSyncError(null);
         }
       } catch (error) {
         console.error("[AuthContext] Error initializing auth:", error);
         setIsGuest(false);
-        setSyncState(SyncState.IDLE);
+        setSyncState(SyncState.ERROR);
+        setSyncError(
+          error instanceof Error ? error.message : "Auth initialization failed",
+        );
       } finally {
         setLoading(false);
       }
@@ -383,6 +399,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (!currentIsGuest) {
           setUser(null);
           setSyncState(SyncState.IDLE);
+          setSyncError(null);
         }
       }
       setLoading(false);
@@ -397,7 +414,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       subscriber();
       syncOrchestrator.deinitialize(); // Ensure realtime listeners are unsubscribed
     };
-  }, [isGuest, initializeSync]); // Removed syncState from deps — uses ref instead
+  }, [initializeSync]); // keep listener/bootstrap stable across guest-state changes
 
   const contextValue = useMemo(
     () => ({
@@ -408,8 +425,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       signOut,
       continueAsGuest,
       syncState,
+      syncError,
     }),
-    [user, loading, isGuest, signIn, signOut, continueAsGuest, syncState],
+    [
+      user,
+      loading,
+      isGuest,
+      signIn,
+      signOut,
+      continueAsGuest,
+      syncState,
+      syncError,
+    ],
   );
 
   return (

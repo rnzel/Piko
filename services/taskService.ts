@@ -110,6 +110,37 @@ export const taskService = {
         updatedAt: Date.now(),
       });
       await syncOrchestrator.updateTask(updatedTask);
+
+      const reminderChanged =
+        task.reminder !== updatedTask.reminder ||
+        task.reminderAt !== updatedTask.reminderAt ||
+        task.text !== updatedTask.text;
+
+      if (reminderChanged) {
+        try {
+          const { notificationService } =
+            await import("@/services/notificationService");
+
+          // Clear previous reminder whenever reminder settings changed
+          await notificationService.cancelReminder(task.id);
+
+          // Re-schedule only if updated task still has an active reminder
+          if (
+            updatedTask.reminder &&
+            updatedTask.reminderAt &&
+            !updatedTask.completed
+          ) {
+            await notificationService.scheduleReminder(
+              updatedTask.id,
+              updatedTask.reminderAt,
+              updatedTask.text,
+            );
+          }
+        } catch (e) {
+          console.error("Failed to reconcile reminder after task update:", e);
+        }
+      }
+
       return updatedTask;
     }
     return null;
