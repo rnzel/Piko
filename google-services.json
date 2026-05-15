@@ -14,11 +14,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "1015788618693-r1v76tdva6d673hpc8aiomvrrn2q9dhu.apps.googleusercontent.com",
+          "client_id": "1015788618693-s21gb1i4j81pncu9h5pq33ch9cbo7t8m.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.zel_01.Piko",
-            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
+            "certificate_hash": "f7a236a2f97baea23ed095c54be909152ab8b46d"
           }
         },
         {
