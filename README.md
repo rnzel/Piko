@@ -213,18 +213,6 @@ npm start
 npm run android
 ```
 
-### Run on iOS
-
-```bash
-npm run ios
-```
-
-### Run on Web
-
-```bash
-npm run web
-```
-
 ### Lint the Project
 
 ```bash
@@ -243,11 +231,3 @@ npm run lint
 - Recent storage logic separates **guest data** from **authenticated account data** to avoid cross-session task leakage.
 
 ---
-
-## 8. Submission Notes
-
-Before final submission, update this README with:
-
-- the actual **10 screenshot image files**
-- any course-specific or lecturer-required wording for the **midterm vs final** comparison
-- any platform-specific setup notes if your Firebase/Auth environment differs from the default setup
