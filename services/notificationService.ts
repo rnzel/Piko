@@ -39,6 +39,22 @@ function generateNotificationId(): string {
   return `notif_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
+function isSameDeliveredReminder(
+  notification: AppNotification,
+  taskId: string,
+  title: string,
+  body: string,
+  createdAt: number,
+): boolean {
+  return (
+    notification.type === "task_reminder" &&
+    notification.data?.taskId === taskId &&
+    notification.title === title &&
+    notification.body === body &&
+    Math.abs(notification.createdAt - createdAt) < 60_000
+  );
+}
+
 export const notificationService = {
   // Request permissions for notifications (returns granted boolean)
   async requestPermissions(): Promise<boolean> {
@@ -88,7 +104,17 @@ export const notificationService = {
     taskId: string,
     title: string,
     body: string,
-  ): Promise<void> {
+    createdAt: number = Date.now(),
+  ): Promise<string> {
+    const notifications = await notificationStorage.getNotifications();
+    const existing = notifications.find((notification) =>
+      isSameDeliveredReminder(notification, taskId, title, body, createdAt),
+    );
+
+    if (existing) {
+      return existing.id;
+    }
+
     const notification: AppNotification = {
       id: generateNotificationId(),
       type: "task_reminder",
@@ -96,16 +122,17 @@ export const notificationService = {
       body,
       data: { taskId },
       read: false,
-      createdAt: Date.now(),
+      createdAt,
     };
     await notificationStorage.addNotification(notification);
     console.log(
       `[notificationService] created in-app notification id=${notification.id} for task=${taskId}`,
     );
+    return notification.id;
   },
 
   // Schedule a local reminder for a task id at a unix timestamp (ms)
-  // Also creates a persistent in-app notification record.
+  // Persistent in-app notification records are created only when a reminder is delivered.
   // Respects user's sound and vibrate preferences automatically.
   async scheduleReminder(
     taskId: string,
@@ -157,13 +184,6 @@ export const notificationService = {
       console.log(
         `[notificationService] scheduled reminder for task=${taskId} id=${scheduledId} at=${triggerDate.toISOString()}`,
       );
-
-      // Create in-app notification record
-      await this.createAppNotification(
-        taskId,
-        "Task Reminder",
-        `Reminder set for: ${taskText || "a task"}`,
-      );
     } catch (e) {
       console.error("[notificationService] scheduleReminder error", e);
     }
@@ -212,6 +232,10 @@ export const notificationService = {
     } catch (e) {
       console.error("[notificationService] cancelReminder error", e);
     }
+  },
+
+  async deleteNotificationsForTask(taskId: string): Promise<void> {
+    await notificationStorage.deleteNotificationsForTask(taskId);
   },
 };
 

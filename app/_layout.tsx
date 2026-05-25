@@ -65,6 +65,22 @@ export default function RootLayout() {
 
   // Listen for notification taps (when user taps a notification from the system tray)
   useEffect(() => {
+    const receivedListener = Notifications.addNotificationReceivedListener(
+      async (notification) => {
+        const taskId = notification.request.content.data?.taskId as
+          | string
+          | undefined;
+        if (!taskId) return;
+
+        await notificationService.createAppNotification(
+          taskId,
+          notification.request.content.title || "Task Reminder",
+          notification.request.content.body || "You have a task reminder.",
+          Date.now(),
+        );
+      },
+    );
+
     const responseListener =
       Notifications.addNotificationResponseReceivedListener(
         async (response) => {
@@ -72,19 +88,22 @@ export default function RootLayout() {
             | string
             | undefined;
           if (taskId) {
+            const notificationId =
+              await notificationService.createAppNotification(
+                taskId,
+                response.notification.request.content.title || "Task Reminder",
+                response.notification.request.content.body ||
+                  "You have a task reminder.",
+                Date.now(),
+              );
             // Mark the corresponding in-app notification as read
-            const notifications = await notificationService.getNotifications();
-            const matching = notifications.find(
-              (n) => n.data?.taskId === taskId,
-            );
-            if (matching) {
-              await notificationService.markAsRead(matching.id);
-            }
+            await notificationService.markAsRead(notificationId);
           }
         },
       );
 
     return () => {
+      receivedListener.remove();
       responseListener.remove();
     };
   }, []);

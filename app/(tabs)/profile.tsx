@@ -4,6 +4,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { notificationService } from "@/services/notificationService";
 import { SyncState } from "@/types";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Haptics from "expo-haptics";
+import * as Notifications from "expo-notifications";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   Alert,
@@ -14,6 +16,7 @@ import {
   Switch,
   Text,
   TouchableOpacity,
+  Vibration,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -24,6 +27,7 @@ const ProfileScreen = () => {
   const {
     user,
     isGuest,
+    isOffline,
     signIn,
     signOut,
     continueAsGuest,
@@ -34,6 +38,15 @@ const ProfileScreen = () => {
   const [prefs, setPrefs] = useState({ sound: true, vibrate: true });
 
   const syncStatusConfig = React.useMemo(() => {
+    if (isOffline) {
+      return {
+        title: "Offline",
+        badge: "Offline",
+        description:
+          "You’re not connected to the internet. Your changes stay on this device and will sync when you’re back online.",
+      };
+    }
+
     switch (syncState) {
       case SyncState.DEGRADED:
         return {
@@ -58,39 +71,74 @@ const ProfileScreen = () => {
       case SyncState.REALTIME_READY:
         return {
           title: "Syncing",
-          badge: "Live",
+          badge: "Syncing",
           description: "Your tasks are syncing across devices.",
         };
       case SyncState.READY:
       default:
         return {
           title: "Synced",
-          badge: "Live",
+          badge: "Synced",
           description: "Your tasks automatically sync across all your devices.",
         };
     }
-  }, [syncError, syncState]);
+  }, [isOffline, syncError, syncState]);
 
   useEffect(() => {
     notificationService.getPreferences().then(setPrefs);
   }, []);
 
+  const previewSoundSample = useCallback(async () => {
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "Sound enabled",
+          body: "This is how your reminder sound will play.",
+          sound: "default",
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      console.error("Error previewing notification sound:", error);
+    }
+  }, []);
+
+  const previewVibrationSample = useCallback(async () => {
+    try {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.warn(
+        "Haptics preview unavailable, using vibration fallback:",
+        error,
+      );
+      Vibration.vibrate([0, 150, 80, 150]);
+    }
+  }, []);
+
   const handleToggleSound = useCallback(
-    (value: boolean) => {
+    async (value: boolean) => {
       const next = { ...prefs, sound: value };
       setPrefs(next);
-      notificationService.setPreferences(next);
+      await notificationService.setPreferences(next);
+
+      if (value) {
+        await previewSoundSample();
+      }
     },
-    [prefs],
+    [prefs, previewSoundSample],
   );
 
   const handleToggleVibrate = useCallback(
-    (value: boolean) => {
+    async (value: boolean) => {
       const next = { ...prefs, vibrate: value };
       setPrefs(next);
-      notificationService.setPreferences(next);
+      await notificationService.setPreferences(next);
+
+      if (value) {
+        await previewVibrationSample();
+      }
     },
-    [prefs],
+    [prefs, previewVibrationSample],
   );
 
   const handleSignOut = () => {

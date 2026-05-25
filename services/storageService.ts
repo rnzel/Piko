@@ -7,13 +7,31 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 // ────────────────────────────────────────────────────────────
 
 const STORAGE_KEYS = {
-  TASKS: "@piko_tasks",
+  TASKS_LEGACY: "@piko_tasks",
   USER: "@piko_user",
   IS_GUEST: "@piko_is_guest",
   NOTIFICATIONS: "@piko_notifications",
-  PENDING_DELETES: "@piko_pending_deletes",
-  PENDING_UPSERTS: "@piko_pending_upserts",
+  PENDING_DELETES_LEGACY: "@piko_pending_deletes",
+  PENDING_UPSERTS_LEGACY: "@piko_pending_upserts",
+  TASKS_GUEST: "@piko_tasks_guest",
+  PENDING_DELETES_GUEST: "@piko_pending_deletes_guest",
+  PENDING_UPSERTS_GUEST: "@piko_pending_upserts_guest",
 } as const;
+
+const STORAGE_PREFIXES = {
+  TASKS_USER: "@piko_tasks_user_",
+  PENDING_DELETES_USER: "@piko_pending_deletes_user_",
+  PENDING_UPSERTS_USER: "@piko_pending_upserts_user_",
+} as const;
+
+type SessionScope =
+  | { type: "guest" }
+  | { type: "user"; uid: string };
+
+function sanitizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string");
+}
 
 // ────────────────────────────────────────────────────────────
 // Storage versioning
@@ -21,6 +39,166 @@ const STORAGE_KEYS = {
 
 const APP_STORAGE_VERSION_KEY = "@piko_storage_version";
 const CURRENT_STORAGE_VERSION = 2;
+
+function getTaskStorageKey(scope: SessionScope): string {
+  return scope.type === "guest"
+    ? STORAGE_KEYS.TASKS_GUEST
+    : `${STORAGE_PREFIXES.TASKS_USER}${scope.uid}`;
+}
+
+function getPendingDeletesStorageKey(scope: SessionScope): string {
+  return scope.type === "guest"
+    ? STORAGE_KEYS.PENDING_DELETES_GUEST
+    : `${STORAGE_PREFIXES.PENDING_DELETES_USER}${scope.uid}`;
+}
+
+function getPendingUpsertsStorageKey(scope: SessionScope): string {
+  return scope.type === "guest"
+    ? STORAGE_KEYS.PENDING_UPSERTS_GUEST
+    : `${STORAGE_PREFIXES.PENDING_UPSERTS_USER}${scope.uid}`;
+}
+
+async function getCurrentSessionScope(): Promise<SessionScope> {
+  try {
+    const [userJson, isGuestValue] = await Promise.all([
+      AsyncStorage.getItem(STORAGE_KEYS.USER),
+      AsyncStorage.getItem(STORAGE_KEYS.IS_GUEST),
+    ]);
+
+    if (isGuestValue === "true") {
+      return { type: "guest" };
+    }
+
+    if (userJson) {
+      const user = JSON.parse(userJson) as UserProfile | null;
+      if (user?.uid) {
+        return { type: "user", uid: user.uid };
+      }
+    }
+  } catch (error) {
+    console.error("Error resolving current session scope:", error);
+  }
+
+  return { type: "guest" };
+}
+
+async function getTasksForScope(scope: SessionScope): Promise<Task[]> {
+  try {
+    const storageKey = getTaskStorageKey(scope);
+    let tasksJson = await AsyncStorage.getItem(storageKey);
+
+    if (!tasksJson && scope.type === "user") {
+      const legacyTasksJson = await AsyncStorage.getItem(STORAGE_KEYS.TASKS_LEGACY);
+      if (legacyTasksJson) {
+        tasksJson = legacyTasksJson;
+        await AsyncStorage.setItem(storageKey, legacyTasksJson);
+      }
+    }
+
+    const tasks = tasksJson ? JSON.parse(tasksJson) : [];
+    return tasks.map((t: any) => normalizeTask(t)).filter(Boolean) as Task[];
+  } catch (error) {
+    console.error("Error getting tasks:", error);
+    return [];
+  }
+}
+
+async function saveTasksForScope(
+  scope: SessionScope,
+  tasks: Task[],
+): Promise<void> {
+  try {
+    const normalized = tasks.map((t) =>
+      normalizeTask({
+        ...t,
+        updatedAt: t.updatedAt || Date.now(),
+      }),
+    );
+    await AsyncStorage.setItem(
+      getTaskStorageKey(scope),
+      JSON.stringify(normalized),
+    );
+  } catch (error) {
+    console.error("Error saving tasks:", error);
+  }
+}
+
+async function clearTasksForScope(scope: SessionScope): Promise<void> {
+  try {
+    await AsyncStorage.setItem(getTaskStorageKey(scope), JSON.stringify([]));
+  } catch (error) {
+    console.error("Error clearing tasks:", error);
+  }
+}
+
+async function getPendingIdsForScope(storageKey: string): Promise<string[]> {
+  try {
+    const json = await AsyncStorage.getItem(storageKey);
+    return json ? sanitizeStringArray(JSON.parse(json)) : [];
+  } catch (error) {
+    console.error("Error getting pending ids:", error);
+    return [];
+  }
+}
+
+async function getPendingIdsWithLegacyFallback(
+  scope: SessionScope,
+  scopedKey: string,
+  legacyKey: string,
+): Promise<string[]> {
+  try {
+    let json = await AsyncStorage.getItem(scopedKey);
+
+    if (!json && scope.type === "user") {
+      const legacyJson = await AsyncStorage.getItem(legacyKey);
+      if (legacyJson) {
+        json = legacyJson;
+        await AsyncStorage.setItem(scopedKey, legacyJson);
+      }
+    }
+
+    return json ? sanitizeStringArray(JSON.parse(json)) : [];
+  } catch (error) {
+    console.error("Error getting pending ids:", error);
+    return [];
+  }
+}
+
+async function addPendingIdForScope(
+  storageKey: string,
+  taskId: string,
+): Promise<void> {
+  try {
+    const ids = await getPendingIdsForScope(storageKey);
+    if (!ids.includes(taskId)) {
+      ids.push(taskId);
+      await AsyncStorage.setItem(storageKey, JSON.stringify(ids));
+    }
+  } catch (error) {
+    console.error("Error adding pending id:", error);
+  }
+}
+
+async function removePendingIdForScope(
+  storageKey: string,
+  taskId: string,
+): Promise<void> {
+  try {
+    const ids = await getPendingIdsForScope(storageKey);
+    const filtered = ids.filter((id) => id !== taskId);
+    await AsyncStorage.setItem(storageKey, JSON.stringify(filtered));
+  } catch (error) {
+    console.error("Error removing pending id:", error);
+  }
+}
+
+async function clearPendingIdsForScope(storageKey: string): Promise<void> {
+  try {
+    await AsyncStorage.setItem(storageKey, JSON.stringify([]));
+  } catch (error) {
+    console.error("Error clearing pending ids:", error);
+  }
+}
 
 async function checkAndMigrateStorage(): Promise<void> {
   try {
@@ -55,29 +233,29 @@ async function checkAndMigrateStorage(): Promise<void> {
 
 export const taskStorage = {
   async getTasks(): Promise<Task[]> {
-    try {
-      const tasksJson = await AsyncStorage.getItem(STORAGE_KEYS.TASKS);
-      const tasks = tasksJson ? JSON.parse(tasksJson) : [];
-      return tasks.map((t: any) => normalizeTask(t)).filter(Boolean) as Task[];
-    } catch (error) {
-      console.error("Error getting tasks:", error);
-      return [];
-    }
+    const scope = await getCurrentSessionScope();
+    return getTasksForScope(scope);
+  },
+
+  async getGuestTasks(): Promise<Task[]> {
+    return getTasksForScope({ type: "guest" });
+  },
+
+  async getUserTasks(uid: string): Promise<Task[]> {
+    return getTasksForScope({ type: "user", uid });
   },
 
   async saveTasks(tasks: Task[]): Promise<void> {
-    try {
-      const normalized = tasks.map((t) => ({
-        ...t,
-        updatedAt: t.updatedAt || Date.now(),
-      }));
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.TASKS,
-        JSON.stringify(normalized),
-      );
-    } catch (error) {
-      console.error("Error saving tasks:", error);
-    }
+    const scope = await getCurrentSessionScope();
+    await saveTasksForScope(scope, tasks);
+  },
+
+  async saveGuestTasks(tasks: Task[]): Promise<void> {
+    await saveTasksForScope({ type: "guest" }, tasks);
+  },
+
+  async saveUserTasks(uid: string, tasks: Task[]): Promise<void> {
+    await saveTasksForScope({ type: "user", uid }, tasks);
   },
 
   async addTask(task: Task): Promise<void> {
@@ -103,6 +281,46 @@ export const taskStorage = {
     }
   },
 
+  async upsertTask(task: Task): Promise<void> {
+    try {
+      const tasks = await this.getTasks();
+      const index = tasks.findIndex((t) => t.id === task.id);
+      const normalizedTask = normalizeTask(task);
+      if (index === -1) {
+        tasks.push(normalizedTask);
+      } else {
+        tasks[index] = normalizedTask;
+      }
+      await this.saveTasks(tasks);
+    } catch (error) {
+      console.error("Error upserting task:", error);
+    }
+  },
+
+  async markTasksSynced(
+    taskIds: string[],
+    metadata?: Partial<Pick<Task, "createdBy" | "lastModifiedBy">>,
+  ): Promise<void> {
+    try {
+      if (taskIds.length === 0) return;
+      const ids = new Set(taskIds);
+      const tasks = await this.getTasks();
+      const updated = tasks.map((task) =>
+        ids.has(task.id)
+          ? normalizeTask({
+              ...task,
+              createdBy: task.createdBy ?? metadata?.createdBy,
+              lastModifiedBy: metadata?.lastModifiedBy ?? task.lastModifiedBy,
+              syncStatus: "synced",
+            })
+          : task,
+      );
+      await this.saveTasks(updated);
+    } catch (error) {
+      console.error("Error marking tasks as synced:", error);
+    }
+  },
+
   async deleteTask(taskId: string): Promise<void> {
     try {
       const tasks = await this.getTasks();
@@ -125,11 +343,16 @@ export const taskStorage = {
   },
 
   async clearTasks(): Promise<void> {
-    try {
-      await AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify([]));
-    } catch (error) {
-      console.error("Error clearing tasks:", error);
-    }
+    const scope = await getCurrentSessionScope();
+    await clearTasksForScope(scope);
+  },
+
+  async clearGuestTasks(): Promise<void> {
+    await clearTasksForScope({ type: "guest" });
+  },
+
+  async clearUserTasks(uid: string): Promise<void> {
+    await clearTasksForScope({ type: "user", uid });
   },
 };
 
@@ -260,6 +483,18 @@ export const notificationStorage = {
     }
   },
 
+  async deleteNotificationsForTask(taskId: string): Promise<void> {
+    try {
+      const notifications = await this.getNotifications();
+      const filtered = notifications.filter((n) => n.data?.taskId !== taskId);
+      if (filtered.length !== notifications.length) {
+        await this.saveNotifications(filtered);
+      }
+    } catch (error) {
+      console.error("Error deleting task notifications:", error);
+    }
+  },
+
   async clearNotifications(): Promise<void> {
     try {
       await AsyncStorage.setItem(
@@ -289,7 +524,7 @@ export const notificationStorage = {
     try {
       const notifications = await this.getNotifications();
       return notifications.filter((n) => !n.read).length;
-    } catch (error) {
+    } catch {
       return 0;
     }
   },
@@ -302,52 +537,39 @@ export const notificationStorage = {
 
 export const pendingDeleteStorage = {
   async getPendingDeleteIds(): Promise<string[]> {
-    try {
-      const json = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_DELETES);
-      return json ? JSON.parse(json) : [];
-    } catch (error) {
-      console.error("Error getting pending deletes:", error);
-      return [];
-    }
+    const scope = await getCurrentSessionScope();
+    return getPendingIdsWithLegacyFallback(
+      scope,
+      getPendingDeletesStorageKey(scope),
+      STORAGE_KEYS.PENDING_DELETES_LEGACY,
+    );
+  },
+
+  async getGuestPendingDeleteIds(): Promise<string[]> {
+    return getPendingIdsForScope(
+      getPendingDeletesStorageKey({ type: "guest" }),
+    );
   },
 
   async addPendingDeleteId(taskId: string): Promise<void> {
-    try {
-      const ids = await this.getPendingDeleteIds();
-      if (!ids.includes(taskId)) {
-        ids.push(taskId);
-        await AsyncStorage.setItem(
-          STORAGE_KEYS.PENDING_DELETES,
-          JSON.stringify(ids),
-        );
-      }
-    } catch (error) {
-      console.error("Error adding pending delete:", error);
-    }
+    const scope = await getCurrentSessionScope();
+    await addPendingIdForScope(getPendingDeletesStorageKey(scope), taskId);
   },
 
   async removePendingDeleteId(taskId: string): Promise<void> {
-    try {
-      const ids = await this.getPendingDeleteIds();
-      const filtered = ids.filter((id) => id !== taskId);
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.PENDING_DELETES,
-        JSON.stringify(filtered),
-      );
-    } catch (error) {
-      console.error("Error removing pending delete:", error);
-    }
+    const scope = await getCurrentSessionScope();
+    await removePendingIdForScope(getPendingDeletesStorageKey(scope), taskId);
   },
 
   async clearPendingDeletes(): Promise<void> {
-    try {
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.PENDING_DELETES,
-        JSON.stringify([]),
-      );
-    } catch (error) {
-      console.error("Error clearing pending deletes:", error);
-    }
+    const scope = await getCurrentSessionScope();
+    await clearPendingIdsForScope(getPendingDeletesStorageKey(scope));
+  },
+
+  async clearGuestPendingDeletes(): Promise<void> {
+    await clearPendingIdsForScope(
+      getPendingDeletesStorageKey({ type: "guest" }),
+    );
   },
 };
 
@@ -357,52 +579,39 @@ export const pendingDeleteStorage = {
 
 export const pendingUpsertStorage = {
   async getPendingUpsertIds(): Promise<string[]> {
-    try {
-      const json = await AsyncStorage.getItem(STORAGE_KEYS.PENDING_UPSERTS);
-      return json ? JSON.parse(json) : [];
-    } catch (error) {
-      console.error("Error getting pending upserts:", error);
-      return [];
-    }
+    const scope = await getCurrentSessionScope();
+    return getPendingIdsWithLegacyFallback(
+      scope,
+      getPendingUpsertsStorageKey(scope),
+      STORAGE_KEYS.PENDING_UPSERTS_LEGACY,
+    );
+  },
+
+  async getGuestPendingUpsertIds(): Promise<string[]> {
+    return getPendingIdsForScope(
+      getPendingUpsertsStorageKey({ type: "guest" }),
+    );
   },
 
   async addPendingUpsertId(taskId: string): Promise<void> {
-    try {
-      const ids = await this.getPendingUpsertIds();
-      if (!ids.includes(taskId)) {
-        ids.push(taskId);
-        await AsyncStorage.setItem(
-          STORAGE_KEYS.PENDING_UPSERTS,
-          JSON.stringify(ids),
-        );
-      }
-    } catch (error) {
-      console.error("Error adding pending upsert:", error);
-    }
+    const scope = await getCurrentSessionScope();
+    await addPendingIdForScope(getPendingUpsertsStorageKey(scope), taskId);
   },
 
   async removePendingUpsertId(taskId: string): Promise<void> {
-    try {
-      const ids = await this.getPendingUpsertIds();
-      const filtered = ids.filter((id) => id !== taskId);
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.PENDING_UPSERTS,
-        JSON.stringify(filtered),
-      );
-    } catch (error) {
-      console.error("Error removing pending upsert:", error);
-    }
+    const scope = await getCurrentSessionScope();
+    await removePendingIdForScope(getPendingUpsertsStorageKey(scope), taskId);
   },
 
   async clearPendingUpserts(): Promise<void> {
-    try {
-      await AsyncStorage.setItem(
-        STORAGE_KEYS.PENDING_UPSERTS,
-        JSON.stringify([]),
-      );
-    } catch (error) {
-      console.error("Error clearing pending upserts:", error);
-    }
+    const scope = await getCurrentSessionScope();
+    await clearPendingIdsForScope(getPendingUpsertsStorageKey(scope));
+  },
+
+  async clearGuestPendingUpserts(): Promise<void> {
+    await clearPendingIdsForScope(
+      getPendingUpsertsStorageKey({ type: "guest" }),
+    );
   },
 };
 
@@ -411,13 +620,25 @@ export const pendingUpsertStorage = {
 
 export async function clearAllStorage(): Promise<void> {
   try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const scopedKeys = allKeys.filter(
+      (key) =>
+        key.startsWith(STORAGE_PREFIXES.TASKS_USER) ||
+        key.startsWith(STORAGE_PREFIXES.PENDING_DELETES_USER) ||
+        key.startsWith(STORAGE_PREFIXES.PENDING_UPSERTS_USER),
+    );
+
     await AsyncStorage.multiRemove([
-      STORAGE_KEYS.TASKS,
+      STORAGE_KEYS.TASKS_LEGACY,
+      STORAGE_KEYS.TASKS_GUEST,
       STORAGE_KEYS.USER,
       STORAGE_KEYS.IS_GUEST,
       STORAGE_KEYS.NOTIFICATIONS,
-      STORAGE_KEYS.PENDING_DELETES,
-      STORAGE_KEYS.PENDING_UPSERTS,
+      STORAGE_KEYS.PENDING_DELETES_LEGACY,
+      STORAGE_KEYS.PENDING_UPSERTS_LEGACY,
+      STORAGE_KEYS.PENDING_DELETES_GUEST,
+      STORAGE_KEYS.PENDING_UPSERTS_GUEST,
+      ...scopedKeys,
     ]);
   } catch (error) {
     console.error("Error clearing storage:", error);
@@ -426,12 +647,7 @@ export async function clearAllStorage(): Promise<void> {
 
 export async function clearSessionStorage(): Promise<void> {
   try {
-    await AsyncStorage.multiRemove([
-      STORAGE_KEYS.USER,
-      STORAGE_KEYS.IS_GUEST,
-      STORAGE_KEYS.PENDING_DELETES,
-      STORAGE_KEYS.PENDING_UPSERTS,
-    ]);
+    await AsyncStorage.multiRemove([STORAGE_KEYS.USER, STORAGE_KEYS.IS_GUEST]);
   } catch (error) {
     console.error("Error clearing session storage:", error);
   }

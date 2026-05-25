@@ -13,6 +13,7 @@ import {
   onAuthStateChanged,
   signInWithCredential,
 } from "@react-native-firebase/auth";
+import NetInfo from "@react-native-community/netinfo";
 import {
   GoogleSignin,
   statusCodes,
@@ -43,6 +44,7 @@ const AuthContext = createContext<AuthState>({
   user: null,
   loading: true,
   isGuest: false,
+  isOffline: false,
   signIn: async () => {},
   signOut: async () => {},
   continueAsGuest: () => {},
@@ -58,6 +60,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [isGuest, setIsGuest] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
   const [syncState, setSyncState] = useState<SyncState>(SyncState.IDLE);
   const [syncError, setSyncError] = useState<string | null>(null);
 
@@ -83,6 +86,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return () => {
       unsubscribe();
     };
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const offline = !state.isConnected || state.isInternetReachable === false;
+      setIsOffline(offline);
+    });
+
+    NetInfo.fetch()
+      .then((state) => {
+        const offline = !state.isConnected || state.isInternetReachable === false;
+        setIsOffline(offline);
+      })
+      .catch((error) => {
+        console.warn("[AuthContext] Failed to get initial network state", error);
+      });
+
+    return unsubscribe;
+  }, []);
+
+  const initializeSync = useCallback(async (uid: string) => {
+    console.log(`[AuthContext] Initializing sync for uid: ${uid}`);
+    // Delegate all sync initialization to the orchestrator
+    await syncOrchestrator.initialize(uid);
+    console.log(`[AuthContext] Sync initialization complete.`);
   }, []);
 
   const signIn = useCallback(async () => {
@@ -201,14 +229,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         );
       }
     }
-  }, [setSyncState]);
-
-  const initializeSync = useCallback(async (uid: string) => {
-    console.log(`[AuthContext] Initializing sync for uid: ${uid}`);
-    // Delegate all sync initialization to the orchestrator
-    await syncOrchestrator.initialize(uid);
-    console.log(`[AuthContext] Sync initialization complete.`);
-  }, []);
+  }, [initializeSync, setSyncState]);
 
   const handleMigrationChoice = useCallback(
     async (strategy: MigrationStrategy) => {
@@ -286,12 +307,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const continueAsGuest = useCallback(async () => {
     console.log("[AuthContext] Continuing as guest...");
     // Deinitialize orchestrator first to clear any previous authenticated state
-    await syncOrchestrator.deinitialize();
-    await guestStorage.setIsGuest(true);
-    setIsGuest(true);
-    setLoading(false);
-    setSyncState(SyncState.READY); // Guest mode is always READY locally
-    setSyncError(null);
+    try {
+      await syncOrchestrator.deinitialize();
+      await firebaseSignOut(getAuth()).catch(() => undefined);
+      await GoogleSignin.signOut().catch(() => undefined);
+      await clearSessionStorage();
+      await guestStorage.setIsGuest(true);
+      setUser(null);
+      setIsGuest(true);
+      setSyncState(SyncState.READY); // Guest mode is always READY locally
+      setSyncError(null);
+    } finally {
+      setLoading(false);
+    }
   }, [setSyncState]);
 
   // Ref to track syncState without stale closures in the onAuthStateChanged listener
@@ -377,7 +405,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         // Use refs to avoid stale closures — read the latest syncState/isGuest values
         const currentSyncState = syncStateRef.current;
-        const currentIsGuest = isGuestRef.current;
 
         // If we are already mid-sync (e.g., from signIn flow), don't re-initialize.
         // Otherwise, this is a fresh app start with an existing authenticated session.
@@ -421,6 +448,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       user,
       loading,
       isGuest,
+      isOffline,
       signIn,
       signOut,
       continueAsGuest,
@@ -431,6 +459,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       user,
       loading,
       isGuest,
+      isOffline,
       signIn,
       signOut,
       continueAsGuest,

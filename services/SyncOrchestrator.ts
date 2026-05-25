@@ -354,6 +354,15 @@ class SyncOrchestrator {
     this._listeners.forEach((listener) => listener(state));
   }
 
+  private _toSyncedTask(task: Task, uid: string): Task {
+    return normalizeTask({
+      ...task,
+      createdBy: task.createdBy ?? uid,
+      lastModifiedBy: uid,
+      syncStatus: "synced",
+    });
+  }
+
   // ──────────────────────────────────────────────────────────
   // Upload local data (tasks only)
   // ──────────────────────────────────────────────────────────
@@ -391,6 +400,10 @@ class SyncOrchestrator {
       console.log(`[SyncOrchestrator] Added ${tasks.length} tasks to batch.`);
 
       await batch.commit();
+      await taskStorage.markTasksSynced(
+        tasks.map((task) => task.id),
+        { createdBy: uid, lastModifiedBy: uid },
+      );
       console.log(`[SyncOrchestrator] Uploaded ${tasks.length} tasks.`);
     } finally {
       this._syncLock.release();
@@ -488,7 +501,7 @@ class SyncOrchestrator {
       const local = localMap.get(rt.id);
       if (!local) {
         // Remote task not present locally — add it
-        localMap.set(rt.id, rt);
+        localMap.set(rt.id, normalizeTask({ ...rt, syncStatus: "synced" }));
       } else if (
         local.syncStatus === "synced" ||
         local.syncStatus === "conflict"
@@ -674,15 +687,12 @@ class SyncOrchestrator {
         await setDoc(
           taskDocRef,
           sanitizeForFirestore({
-            ...task,
-            createdBy: this._uid,
-            lastModifiedBy: this._uid,
-            syncStatus: "synced",
-            updatedAt: Date.now(),
+            ...this._toSyncedTask(task, this._uid),
           }),
           { merge: true },
         );
         successfullyUpserted.push(taskId);
+        await taskStorage.upsertTask(this._toSyncedTask(task, this._uid));
       } catch (e) {
         console.warn(
           `[SyncOrchestrator] Failed pending upsert for task ${taskId}, will retry later:`,
@@ -727,16 +737,12 @@ class SyncOrchestrator {
         const taskDocRef = getDocRef(userPrivateTasksPath(this._uid!), task.id);
         await setDoc(
           taskDocRef,
-          sanitizeForFirestore({
-            ...task,
-            createdBy: this._uid,
-            lastModifiedBy: this._uid,
-            syncStatus: "synced",
-          }),
+          sanitizeForFirestore(this._toSyncedTask(task, this._uid!)),
         );
         console.log(
           `[SyncOrchestrator] addTask: ${task.id} written to Firestore.`,
         );
+        await taskStorage.upsertTask(this._toSyncedTask(task, this._uid!));
         await pendingUpsertStorage.removePendingUpsertId(task.id);
       } catch (e) {
         console.error(
@@ -762,16 +768,13 @@ class SyncOrchestrator {
         const taskDocRef = getDocRef(userPrivateTasksPath(this._uid!), task.id);
         await setDoc(
           taskDocRef,
-          sanitizeForFirestore({
-            ...task,
-            lastModifiedBy: this._uid,
-            updatedAt: Date.now(),
-          }),
+          sanitizeForFirestore(this._toSyncedTask(task, this._uid!)),
           { merge: true },
         );
         console.log(
           `[SyncOrchestrator] updateTask: ${task.id} updated in Firestore.`,
         );
+        await taskStorage.upsertTask(this._toSyncedTask(task, this._uid!));
         await pendingUpsertStorage.removePendingUpsertId(task.id);
       } catch (e) {
         console.error(
@@ -811,6 +814,8 @@ class SyncOrchestrator {
           `[SyncOrchestrator] deleteTask: ${taskId} marked as deleted in Firestore.`,
         );
         firestoreSucceeded = true;
+        await pendingDeleteStorage.removePendingDeleteId(taskId);
+        await pendingUpsertStorage.removePendingUpsertId(taskId);
       } catch (e) {
         console.error(`[SyncOrchestrator] deleteTask firestore error:`, e);
       }
@@ -854,6 +859,10 @@ class SyncOrchestrator {
           `[SyncOrchestrator] deleteTasks: ${taskIds.length} tasks marked as deleted in Firestore.`,
         );
         firestoreSucceeded = true;
+        for (const taskId of taskIds) {
+          await pendingDeleteStorage.removePendingDeleteId(taskId);
+          await pendingUpsertStorage.removePendingUpsertId(taskId);
+        }
       } catch (e) {
         console.error(`[SyncOrchestrator] deleteTasks firestore error:`, e);
       }
@@ -890,6 +899,9 @@ class SyncOrchestrator {
           );
         }
         await batch.commit();
+        await taskStorage.saveTasks(
+          tasks.map((task) => this._toSyncedTask(task, this._uid!)),
+        );
         console.log(
           `[SyncOrchestrator] saveTasks: ${tasks.length} tasks committed to Firestore.`,
         );

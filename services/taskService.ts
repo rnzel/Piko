@@ -153,6 +153,7 @@ export const taskService = {
       const { notificationService } =
         await import("@/services/notificationService");
       await notificationService.cancelReminder(taskId);
+      await notificationService.deleteNotificationsForTask(taskId);
     } catch (e) {
       // ignore
     }
@@ -166,7 +167,10 @@ export const taskService = {
       const { notificationService } =
         await import("@/services/notificationService");
       await Promise.allSettled(
-        taskIds.map((id) => notificationService.cancelReminder(id)),
+        taskIds.flatMap((id) => [
+          notificationService.cancelReminder(id),
+          notificationService.deleteNotificationsForTask(id),
+        ]),
       );
     } catch (e) {
       // ignore

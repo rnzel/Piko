@@ -143,6 +143,7 @@ export interface AuthState {
   user: UserProfile | null;
   loading: boolean;
   isGuest: boolean;
+  isOffline: boolean;
   signIn: () => Promise<void>;
   signOut: () => Promise<void>;
   continueAsGuest: () => void;

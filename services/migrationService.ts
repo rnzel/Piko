@@ -1,4 +1,8 @@
-import { taskStorage } from "@/services/storageService";
+import {
+  pendingDeleteStorage,
+  pendingUpsertStorage,
+  taskStorage,
+} from "@/services/storageService";
 import { taskService } from "@/services/taskService";
 import { Task } from "@/types";
 
@@ -29,16 +33,14 @@ export async function detectGuestData(): Promise<GuestDataInfo> {
  * Loads guest tasks from the task storage adapter.
  */
 async function loadGuestTasks(): Promise<Task[]> {
-  // Guest tasks are stored in the same local task storage.
-  return await taskStorage.getTasks();
+  return await taskStorage.getGuestTasks();
 }
 
 /**
  * Clears all guest data after successful migration.
  */
 async function clearGuestData(): Promise<void> {
-  // Only task data needs to be cleared now.
-  await taskStorage.clearTasks();
+  await taskStorage.clearGuestTasks();
 }
 
 /**
@@ -56,18 +58,13 @@ export async function migrateGuestData(
   );
 
   if (strategy === "keepAccount") {
-    // Discard guest data, keep account data as-is.
-    // IMPORTANT: Do NOT clear local tasks yet — the orchestrator hasn't synced down
-    // the Firestore tasks. The syncDown in initializeSync will populate the correct
-    // task list from the remote. If we clear local tasks here, the user sees an empty
-    // list until syncDown completes (which is bad UX but not data loss).
-    // Instead, we mark that tasks should be replaced by remote on sync.
-    // The simplest safe approach: do nothing now. The syncDown in initializeSync
-    // will merge remote tasks, and local guest tasks with syncStatus "local" will
-    // NOT be deleted by the improved _mergeTasks logic (which protects local-only).
-    // This avoids the brief empty state entirely.
+    // Discard guest-local tasks and any queued offline guest operations so the
+    // authenticated account can hydrate deterministically from Firestore.
+    await clearGuestData();
+    await pendingDeleteStorage.clearGuestPendingDeletes();
+    await pendingUpsertStorage.clearGuestPendingUpserts();
     console.log(
-      `[migrationService] KeepAccount: deferring to syncDown for remote tasks. Local guest tasks with syncStatus="synced" will be removed by merge.`,
+      `[migrationService] KeepAccount: cleared guest-local task state before authenticated sync.`,
     );
     return;
   }
@@ -104,7 +101,9 @@ export async function migrateGuestData(
     // After migration, AuthContext calls initializeSync(uid), which will:
     //   1. Upload the merged local data to Firestore via _uploadLocalData
     //   2. Sync down from Firestore via _syncDown
-    await taskStorage.saveTasks(mergedTasks);
+    await taskStorage.saveUserTasks(uid, mergedTasks);
+    await pendingDeleteStorage.clearGuestPendingDeletes();
+    await pendingUpsertStorage.clearGuestPendingUpserts();
 
     console.log(
       `[migrationService] Migration complete: added ${addedCount} guest tasks.`,
