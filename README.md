@@ -160,16 +160,16 @@ The overall goal is that **one authenticated user cannot access another user’s
    ![Screenshot 2 - Guest Mode](assets/images/screenshots/Screenshot_20260525-200711.jpg)
 
 3. **Main Task List Screen**  
-   ![Screenshot 3 - Task List](assets/images/screenshots/Screenshot_20260525-200808.jpg)
+   ![Screenshot 3 - Task List](assets/images/screenshots/Screenshot_20260525-200815.jpg)
 
 4. **Add Task Modal**  
-   ![Screenshot 4 - Add Task](assets/images/screenshots/Screenshot_20260525-200815.jpg)
+   ![Screenshot 4 - Add Task](assets/images/screenshots/Screenshot_20260525-200808.jpg)
 
 5. **Task Detail / Edit Modal**  
-   ![Screenshot 5 - Task Detail](assets/images/screenshots/Screenshot_20260525-200821.jpg)
+   ![Screenshot 5 - Task Detail](assets/images/screenshots/Screenshot_20260525-200829.jpg)
 
 6. **Calendar View**  
-   ![Screenshot 6 - Calendar](assets/images/screenshots/Screenshot_20260525-200829.jpg)
+   ![Screenshot 6 - Calendar](assets/images/screenshots/Screenshot_20260525-200821.jpg)
 
 7. **Day Tasks Modal from Calendar**  
    ![Screenshot 7 - Day Tasks](assets/images/screenshots/Screenshot_20260525-200900.jpg)
@@ -178,10 +178,10 @@ The overall goal is that **one authenticated user cannot access another user’s
    ![Screenshot 8 - Notifications](assets/images/screenshots/Screenshot_20260525-200908.jpg)
 
 9. **Profile Screen with Sync Status**  
-   ![Screenshot 9 - Profile](assets/images/screenshots/Screenshot_20260525-201104.jpg)
+   ![Screenshot 9 - Profile](assets/images/screenshots/Screenshot_20260525-201123.jpg)
 
 10. **Migration Flow / Guest Data Import Prompt**  
-    ![Screenshot 10 - Migration Modal](assets/images/screenshots/Screenshot_20260525-201123.jpg)
+    ![Screenshot 10 - Migration Modal](assets/images/screenshots/Screenshot_20260525-201305.jpg)
 
 ---
 
